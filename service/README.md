@@ -5,6 +5,15 @@ for duplicates before creating anything. Implements tickets #6–#14 (all
 "Part of #5" — see that issue for the full build spec, and `docs/adr/` at
 the repo root for the eight decisions this build follows).
 
+**Mid-migration note (issue #26):** the service is being rebuilt in
+NestJS/TypeScript, one child ticket at a time; `docker compose` now builds
+the new Node service (ticket #27), but the Architecture, Demo walkthrough,
+and Testing sections below still describe the Python implementation's
+behavior — they're the target the TypeScript rebuild is re-expressing, not
+yet what's running. They'll be corrected ticket by ticket as the
+corresponding behavior lands (`POST /reports` in #28, the eval harness in
+#35), and the Python source itself is removed in #36.
+
 No frontend: `1_candidate_brief.md` explicitly says "input can arrive
 however you like — an HTTP endpoint or a CLI both fine," and the spec's Out
 of Scope list says the same ("A UI for the Review Flag queue — reviewable
@@ -30,9 +39,9 @@ untouched by anything below.
 ## Running it — from a completely clean machine
 
 ```
-./bootstrap.sh                                                  # 1. Gitea up + admin user + API token + repo, all automatic
-docker compose up -d --build triage-service                     # 2. build + start the service
-docker compose run --rm triage-service python -m scripts.seed_set_a   # 3. seed Set A (idempotent)
+./bootstrap.sh                                        # 1. Gitea up + admin user + API token + repo, all automatic
+docker compose up -d --build triage-service            # 2. build + start the service
+docker compose run --rm triage-service npm run seed:set-a   # 3. seed Set A (idempotent)
 ```
 
 That's the whole path from `git clone` to a working system — no manual
@@ -46,10 +55,10 @@ else" below.
 Only `ANTHROPIC_API_KEY` in `.env` can't be automated — that's a secret
 only you hold. `bootstrap.sh` will tell you if it's missing.
 
-The service's container mounts `./service` with `--reload`, so editing
-code doesn't require a rebuild — only `docker compose up -d --build` again
-if `requirements.txt` changes. Health check: `GET /health` (also checks
-Gitea's own reachability).
+The service's container mounts `./service` and runs `npm run start:dev`
+(`ts-node-dev`), so editing code doesn't require a rebuild — only
+`docker compose up -d --build` again if `package.json` changes. Health
+check: `GET /health` (also checks Gitea's own reachability).
 
 ### Fresh start (reset the demo target to a clean slate)
 
@@ -67,8 +76,8 @@ Delete This Repository — a deliberate one-click confirmation, not
 something worth scripting), then:
 
 ```
-./bootstrap.sh                                                        # recreates acme-app + labels
-docker compose run --rm triage-service python -m scripts.seed_set_a   # reseeds Set A
+./bootstrap.sh                                               # recreates acme-app + labels
+docker compose run --rm triage-service npm run seed:set-a    # reseeds Set A
 ```
 
 The Decision Record SQLite store also needs clearing if you do this,
@@ -104,7 +113,7 @@ cd <repo>
 cp .env.example .env  # then fill in ANTHROPIC_API_KEY
 ./bootstrap.sh
 docker compose up -d --build triage-service
-docker compose run --rm triage-service python -m scripts.seed_set_a
+docker compose run --rm triage-service npm run seed:set-a
 docker compose run --rm -e TRIAGE_SERVICE_URL=http://triage-service:8000 triage-service python -m eval.eval_set_b
 ```
 

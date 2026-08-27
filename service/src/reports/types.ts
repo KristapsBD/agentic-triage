@@ -1,0 +1,91 @@
+/**
+ * TS mirror of service/app/schemas.py. Field names stay snake_case to match
+ * the HTTP wire contract (see docs/adr and service/tests/test_http.py)
+ * byte-for-byte — no camelCase/snake_case mapping layer at the boundary.
+ */
+
+export type ReportType = 'bug' | 'feature_request' | 'unclear' | 'spam_or_off_topic';
+export type Severity = 'critical' | 'high' | 'medium' | 'low';
+export type Component =
+  | 'frontend'
+  | 'backend'
+  | 'api'
+  | 'auth'
+  | 'database'
+  | 'infra'
+  | 'docs'
+  | 'unknown';
+export type SameBugJudgment = 'yes' | 'possibly' | 'no';
+export type DuplicateTier = 'clear_duplicate' | 'possible_duplicate' | 'not_a_duplicate';
+export type Outcome =
+  | 'issue_created'
+  | 'duplicate_commented'
+  | 'review_flagged'
+  | 'feature_request_filed'
+  | 'dropped_spam';
+
+export interface TriageDecision {
+  title: string;
+  report_type: ReportType;
+  severity: Severity | null;
+  components: Component[];
+  repro_steps: string[] | null;
+  supporting_evidence: string | null;
+  distinct_issues: string[];
+}
+
+export interface DuplicateCandidate {
+  issue_number: number;
+  title: string;
+  body: string;
+  similarity: number;
+}
+
+export interface DuplicateJudgment {
+  same_bug: SameBugJudgment;
+  rationale: string;
+}
+
+export interface DuplicateVerdict {
+  tier: DuplicateTier;
+  target_issue: number | null;
+  similarity: number | null;
+  rationale: string;
+}
+
+export interface GiteaIssue {
+  number: number;
+  title: string;
+  body: string;
+  labels: string[];
+  state: string;
+}
+
+export interface PendingAction {
+  type: 'create_issue' | 'comment' | 'none';
+  title: string | null;
+  body: string | null;
+  labels: string[];
+  target_issue: number | null;
+}
+
+export interface DecisionRecord {
+  report_hash: string;
+  raw_report: string;
+  status: 'pending' | 'processing' | 'completed' | 'gitea_call_failed';
+  triage_decision: TriageDecision | null;
+  duplicate_verdict: DuplicateVerdict | null;
+  pending_action: PendingAction | null;
+  outcome: Outcome | null;
+  gitea_issue_number: number | null;
+  error: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ResponseEnvelope {
+  outcome: Outcome;
+  gitea_issue_number: number | null;
+  triage_decision: TriageDecision | null;
+  duplicate_verdict: DuplicateVerdict | null;
+}

@@ -1,5 +1,18 @@
+node_modules
+dist
+coverage
+
+# Python implementation, superseded by the NestJS rebuild (issue #26) but
+# still removed from the working tree by a later, dedicated commit (#36) —
+# not needed inside the Node image in the meantime.
+app
+eval
+scripts
+tests
+requirements.txt
+requirements-dev.txt
 .venv
 __pycache__
 *.pyc
-tests
 .pytest_cache
+.mypy_cache
