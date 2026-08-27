@@ -10,7 +10,7 @@ from __future__ import annotations
 import time
 from typing import Literal, get_args
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.labels import COMPONENTS, SEVERITIES
 
@@ -63,6 +63,24 @@ class TriageDecision(BaseModel):
             raise ValueError("title must not be blank")
         return v
 
+    @model_validator(mode="after")
+    def _bug_reports_require_severity_and_components(self) -> "TriageDecision":
+        # The tool schema's `required` list only hints the model; it isn't a
+        # structural guarantee. Without this, an omitted severity/components
+        # on a bug report would pass validation as None/[] and later hit an
+        # unrelated assertion deep in pipeline.py's routing logic — an
+        # unhandled 500 instead of engaging the validation-retry budget
+        # (ADR-0008) like any other malformed structured output.
+        if self.report_type == "bug":
+            if self.severity is None:
+                raise ValueError("severity is required when report_type is 'bug'")
+            if not self.components:
+                raise ValueError(
+                    "components must include at least one value (use 'unknown' if unclear) "
+                    "when report_type is 'bug'"
+                )
+        return self
+
     @property
     def is_bundled(self) -> bool:
         return len(self.distinct_issues) > 1
@@ -93,11 +111,6 @@ class GiteaIssue(BaseModel):
     body: str
     labels: list[str] = Field(default_factory=list)
     state: str = "open"
-
-
-class ReviewFlag(BaseModel):
-    reason: str
-    label: Literal["needs-triage", "needs-info"]
 
 
 class PendingAction(BaseModel):

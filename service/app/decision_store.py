@@ -21,30 +21,30 @@ CREATE TABLE IF NOT EXISTS decision_records (
 
 
 class SqliteDecisionStore:
-    def __init__(self, path: str):
-        self._path = path
-        self._lock = threading.Lock()
-        conn = self._connect()
-        try:
-            conn.execute(SCHEMA)
-            conn.commit()
-        finally:
-            conn.close()
+    """One long-lived connection guarded by a lock (sqlite3.Connection is not
+    thread-safe on its own; check_same_thread=False plus the lock lets
+    FastAPI's threadpool-run sync handlers share it safely).
+    """
 
-    def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(self._path, check_same_thread=False)
+    def __init__(self, path: str):
+        self._conn = sqlite3.connect(path, check_same_thread=False)
+        self._lock = threading.Lock()
+        with self._lock:
+            self._conn.execute(SCHEMA)
+            self._conn.commit()
 
     def save(self, record: DecisionRecord) -> None:
-        with self._lock, self._connect() as conn:
-            conn.execute(
+        with self._lock:
+            self._conn.execute(
                 "INSERT INTO decision_records (report_hash, payload) VALUES (?, ?) "
                 "ON CONFLICT(report_hash) DO UPDATE SET payload = excluded.payload",
                 (record.report_hash, record.model_dump_json()),
             )
+            self._conn.commit()
 
     def get(self, report_hash: str) -> DecisionRecord | None:
-        with self._lock, self._connect() as conn:
-            row = conn.execute(
+        with self._lock:
+            row = self._conn.execute(
                 "SELECT payload FROM decision_records WHERE report_hash = ?", (report_hash,)
             ).fetchone()
         if row is None:

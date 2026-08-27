@@ -9,6 +9,7 @@ or sentence-transformers imports here. See docs/adr/0001-0008.
 from __future__ import annotations
 
 import hashlib
+import time
 
 from app.config import Settings
 from app.errors import GiteaError, PipelineUnavailableError
@@ -32,6 +33,11 @@ VALIDATION_FAILED_NOTE = (
 
 def hash_report(raw_report: str) -> str:
     return hashlib.sha256(raw_report.encode("utf-8")).hexdigest()
+
+
+def _save(record: DecisionRecord, port: TriagePort) -> None:
+    record.updated_at = time.time()
+    port.save_decision_record(record)
 
 
 def _quote(raw_report: str) -> str:
@@ -195,12 +201,12 @@ def _execute_pending_action(record: DecisionRecord, port: TriagePort) -> Respons
             port.comment_issue(action.target_issue, action.body)
             record.gitea_issue_number = action.target_issue
         record.status = "completed"
-        port.save_decision_record(record)
+        _save(record, port)
         return record.to_envelope()
     except GiteaError as e:
         record.status = "gitea_call_failed"
         record.error = str(e)
-        port.save_decision_record(record)
+        _save(record, port)
         raise PipelineUnavailableError(record.report_hash, "gitea_unavailable", str(e)) from e
 
 
@@ -213,10 +219,10 @@ def process_report(raw_report: str, port: TriagePort, settings: Settings) -> Res
 
     if record is None:
         record = DecisionRecord(report_hash=report_hash, raw_report=raw_report, status="pending")
-        port.save_decision_record(record)
+        _save(record, port)
 
     record.status = "processing"
-    port.save_decision_record(record)
+    _save(record, port)
 
     if record.triage_decision is None:
         outcome = extract_with_retry_budgets(
@@ -236,11 +242,11 @@ def process_report(raw_report: str, port: TriagePort, settings: Settings) -> Res
                 labels=[NEEDS_TRIAGE],
             )
             record.outcome = "review_flagged"
-            port.save_decision_record(record)
+            _save(record, port)
             return _execute_pending_action(record, port)
 
         record.triage_decision = outcome.decision  # type: ignore[assignment]
-        port.save_decision_record(record)
+        _save(record, port)
 
     decision = record.triage_decision
     assert decision is not None
@@ -250,6 +256,6 @@ def process_report(raw_report: str, port: TriagePort, settings: Settings) -> Res
         record.pending_action = action
         record.outcome = outcome_name  # type: ignore[assignment]
         record.duplicate_verdict = verdict
-        port.save_decision_record(record)
+        _save(record, port)
 
     return _execute_pending_action(record, port)

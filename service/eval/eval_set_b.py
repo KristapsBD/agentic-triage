@@ -67,6 +67,32 @@ def _check_severity(expected: str):
     return check
 
 
+def _check_severity_not(*excluded: str):
+    """Looser golden check for reports where the exact severity is a
+    judgment call but the rubric rules out certain values outright (e.g.
+    nothing here describes data loss/a security hole/a total outage with no
+    workaround, so 'critical' would be tone-inflated, not rubric-anchored).
+    """
+
+    def check(body: dict) -> list[str]:
+        actual = (body.get("triage_decision") or {}).get("severity")
+        return [f"severity={actual!r} should not be one of {excluded!r}"] if actual in excluded else []
+
+    return check
+
+
+def _check_components_intersects(expected_any_of: set[str]):
+    def check(body: dict) -> list[str]:
+        actual = set((body.get("triage_decision") or {}).get("components") or [])
+        if not actual:
+            return ["components was empty"]
+        if actual.isdisjoint(expected_any_of):
+            return [f"expected components to include one of {expected_any_of!r}, got {actual!r}"]
+        return []
+
+    return check
+
+
 def _check_outcome(expected: str):
     def check(body: dict) -> list[str]:
         actual = body.get("outcome")
@@ -109,12 +135,20 @@ CASES: list[Case] = [
         "When I upload a profile picture larger than about 5MB, the page shows a spinner "
         "forever and the picture never saves. Tried it with a 8MB PNG and a 12MB JPEG, same "
         "result. Chrome on Windows. Smaller images work fine."
-    ), _check_report_type("bug")),
+    ), _all(
+        _check_report_type("bug"),
+        _check_components_intersects({"frontend", "backend"}),
+        _check_severity_not("critical"),  # a workaround exists (smaller images work)
+    )),
     Case("B2_clean_different_area", (
         "The `/api/v2/orders` endpoint returns a 500 whenever the `status` query param is "
         "omitted. Passing `status=open` works. This started today. Reproduced with curl "
         "three times."
-    ), _check_report_type("bug")),
+    ), _all(
+        _check_report_type("bug"),
+        _check_components_intersects({"api", "backend"}),
+        _check_severity_not("critical"),  # a workaround exists (pass status=open)
+    )),
     Case("B3_vague_underspecified",
          "the reports thing is broken again pls fix",
          _check_outcome("review_flagged")),
@@ -145,7 +179,7 @@ CASES: list[Case] = [
         "[2025-06-01 09:14:23] INFO  returning 500\n"
         "```\n"
         "basically checkout dies sometimes"
-    ), _check_report_type("bug")),
+    ), _all(_check_report_type("bug"), _check_severity_not("critical", "low"))),
     # Self-authored near-miss cases (ticket #9 / user story #40): same area as an
     # existing issue but a genuinely different bug — proves the Duplicate Verdict
     # resists false merges, not just catches obvious repeats.

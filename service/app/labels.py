@@ -12,8 +12,6 @@ NEEDS_TRIAGE = "needs-triage"
 NEEDS_INFO = "needs-info"
 FEATURE_REQUEST = "feature-request"
 
-ALL_MANAGED_LABELS = (*COMPONENTS, *SEVERITIES, NEEDS_TRIAGE, NEEDS_INFO, FEATURE_REQUEST)
-
 # Default label colors (Gitea requires one at creation time). Cosmetic only.
 LABEL_COLORS = {
     NEEDS_TRIAGE: "#fbca04",

@@ -69,16 +69,7 @@ class GiteaClient:
             batch = resp.json()
             if not batch:
                 break
-            for raw in batch:
-                issues.append(
-                    GiteaIssue(
-                        number=raw["number"],
-                        title=raw["title"],
-                        body=raw.get("body") or "",
-                        labels=[label["name"] for label in raw.get("labels", [])],
-                        state=raw.get("state", "open"),
-                    )
-                )
+            issues.extend(_issue_from_json(raw) for raw in batch)
             if len(batch) < 50:
                 break
             page += 1
@@ -88,11 +79,15 @@ class GiteaClient:
         resp = self._request("GET", "/issues", params={"state": "all", "q": title, "type": "issues"})
         for raw in resp.json():
             if raw["title"] == title:
-                return GiteaIssue(
-                    number=raw["number"],
-                    title=raw["title"],
-                    body=raw.get("body") or "",
-                    labels=[label["name"] for label in raw.get("labels", [])],
-                    state=raw.get("state", "open"),
-                )
+                return _issue_from_json(raw)
         return None
+
+
+def _issue_from_json(raw: dict) -> GiteaIssue:
+    return GiteaIssue(
+        number=raw["number"],
+        title=raw["title"],
+        body=raw.get("body") or "",
+        labels=[label["name"] for label in raw.get("labels", [])],
+        state=raw.get("state", "open"),
+    )

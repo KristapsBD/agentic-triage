@@ -10,7 +10,7 @@ tool call's fixed fields.
 from __future__ import annotations
 
 import anthropic
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from app.errors import ExtractionValidationError, TransientAPIError
 from app.labels import COMPONENTS, SEVERITIES
@@ -151,6 +151,26 @@ class AnthropicLLMClient:
         self._client = anthropic.Anthropic(api_key=api_key)
         self._model = model
 
+    def _call_tool(self, *, system: str, tool: dict, user_content: str, max_tokens: int, target_model: type[BaseModel]):
+        def call():
+            return self._client.messages.create(
+                model=self._model,
+                max_tokens=max_tokens,
+                system=system,
+                tools=[tool],
+                tool_choice={"type": "tool", "name": tool["name"]},
+                messages=[{"role": "user", "content": user_content}],
+            )
+
+        response = _transient_wrapped(call)
+        tool_use = next((b for b in response.content if b.type == "tool_use"), None)
+        if tool_use is None:
+            raise ExtractionValidationError("model response contained no tool_use block")
+        try:
+            return target_model.model_validate(tool_use.input)
+        except ValidationError as e:
+            raise ExtractionValidationError(str(e)) from e
+
     def extract(self, raw_report: str, feedback: str | None = None) -> TriageDecision:
         user_content = f"<untrusted_raw_report>\n{raw_report}\n</untrusted_raw_report>"
         if feedback:
@@ -158,25 +178,13 @@ class AnthropicLLMClient:
                 "\n\nYour previous tool call failed validation with this error:\n"
                 f"{feedback}\nCorrect it and call the tool again."
             )
-
-        def call():
-            return self._client.messages.create(
-                model=self._model,
-                max_tokens=1024,
-                system=SYSTEM_PROMPT,
-                tools=[TRIAGE_TOOL],
-                tool_choice={"type": "tool", "name": "submit_triage_decision"},
-                messages=[{"role": "user", "content": user_content}],
-            )
-
-        response = _transient_wrapped(call)
-        tool_use = next((b for b in response.content if b.type == "tool_use"), None)
-        if tool_use is None:
-            raise ExtractionValidationError("model response contained no tool_use block")
-        try:
-            return TriageDecision.model_validate(tool_use.input)
-        except ValidationError as e:
-            raise ExtractionValidationError(str(e)) from e
+        return self._call_tool(
+            system=SYSTEM_PROMPT,
+            tool=TRIAGE_TOOL,
+            user_content=user_content,
+            max_tokens=1024,
+            target_model=TriageDecision,
+        )
 
     def judge_duplicate(self, raw_report: str, candidate: DuplicateCandidate) -> DuplicateJudgment:
         user_content = (
@@ -184,22 +192,10 @@ class AnthropicLLMClient:
             f"<untrusted_candidate_issue number=\"{candidate.issue_number}\">\n"
             f"{candidate.title}\n\n{candidate.body}\n</untrusted_candidate_issue>"
         )
-
-        def call():
-            return self._client.messages.create(
-                model=self._model,
-                max_tokens=256,
-                system=DUPLICATE_JUDGMENT_SYSTEM_PROMPT,
-                tools=[DUPLICATE_JUDGMENT_TOOL],
-                tool_choice={"type": "tool", "name": "submit_duplicate_judgment"},
-                messages=[{"role": "user", "content": user_content}],
-            )
-
-        response = _transient_wrapped(call)
-        tool_use = next((b for b in response.content if b.type == "tool_use"), None)
-        if tool_use is None:
-            raise ExtractionValidationError("model response contained no tool_use block")
-        try:
-            return DuplicateJudgment.model_validate(tool_use.input)
-        except ValidationError as e:
-            raise ExtractionValidationError(str(e)) from e
+        return self._call_tool(
+            system=DUPLICATE_JUDGMENT_SYSTEM_PROMPT,
+            tool=DUPLICATE_JUDGMENT_TOOL,
+            user_content=user_content,
+            max_tokens=256,
+            target_model=DuplicateJudgment,
+        )
