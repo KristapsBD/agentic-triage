@@ -14,7 +14,7 @@ def settings() -> Settings:
     return Settings(
         gitea_url="http://localhost:3000",
         gitea_repo_owner="triageadmin",
-        gitea_repo_name="bug-triage",
+        gitea_repo_name="acme-app",
         gitea_token="x",
         anthropic_api_key="x",
         anthropic_model="claude-sonnet-5",

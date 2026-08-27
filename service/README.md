@@ -13,6 +13,20 @@ items are just labeled Gitea issues, viewed through Gitea itself"). This is
 result — curl, the demo walkthrough below, and the eval harness are the
 three ways to exercise it.
 
+**Two separate Gitea projects, one Gitea server.** `bug-triage` is this
+codebase's own git host and its planning tickets (#5-#14, all "Part of
+#5"). `acme-app` is a fictional product — a separate, empty-of-git-history
+Gitea project that exists purely as the triage service's *target*: where
+`POST /reports` files issues, and what duplicate detection checks against.
+They're deliberately not the same repo — the service's own build/planning
+tickets would otherwise be retrievable as false Duplicate Candidates for a
+real bug report (a report mentioning "duplicate detection" or "retries"
+would otherwise surface issue #9 or #10 as a plausible match — confirmed,
+not hypothetical). `GITEA_REPO_NAME` in `.env` points at `acme-app`; `tea`
+and this project's own issue-tracking convention
+(`docs/agents/issue-tracker.md`) resolve `bug-triage` from the git remote,
+untouched by anything below.
+
 ## Running it — from a completely clean machine
 
 ```
@@ -37,23 +51,43 @@ code doesn't require a rebuild — only `docker compose up -d --build` again
 if `requirements.txt` changes. Health check: `GET /health` (also checks
 Gitea's own reachability).
 
-### Fresh start (reset to a clean slate)
+### Fresh start (reset the demo target to a clean slate)
+
+`docker compose down -v` is **not** the right tool for this anymore: Gitea
+stores every project in one data volume, so it would also wipe `bug-triage`
+(this codebase's own git history and planning tickets) along with
+`acme-app`. Reserve `down -v` for the rare case you actually want to redo
+*everything* from zero, including re-hosting this codebase on Gitea and
+re-pushing all branches.
+
+To reset just the demo target (what most "before a demo" resets actually
+want): delete the `acme-app` repo from Gitea's web UI
+(`http://localhost:3000/triageadmin/acme-app/settings` → Danger Zone →
+Delete This Repository — a deliberate one-click confirmation, not
+something worth scripting), then:
 
 ```
-docker compose down -v      # drops Gitea's data volume and the Decision Record DB
-./bootstrap.sh
+./bootstrap.sh                                                        # recreates acme-app + labels
+docker compose run --rm triage-service python -m scripts.seed_set_a   # reseeds Set A
+```
+
+The Decision Record SQLite store also needs clearing if you do this,
+since its entries would otherwise reference issue numbers from the
+deleted repo:
+
+```
+docker compose down triage-service
+docker volume rm agentic-sdw_triage-decisions
 docker compose up -d --build triage-service
-docker compose run --rm triage-service python -m scripts.seed_set_a
 ```
 
-This gives you byte-for-byte the same starting state every time: a new
-Gitea instance, a fresh admin/token/repo, Set A re-seeded from the
-checked-in script. The service itself is stateless code — only Gitea's
-issue history and the SQLite Decision Record store carry state across
-runs, and both live in Docker volumes `down -v` removes. Running this
-today vs. next week vs. on a different machine is the same four commands
-either way, as long as `ANTHROPIC_API_KEY` is set in `.env` first (copy
-`.env.example` if `.env` doesn't exist — `bootstrap.sh` does this for you).
+This gives you byte-for-byte the same starting state every time: a fresh
+`acme-app`, Set A re-seeded from the checked-in script, no stale decision
+records — without touching `bug-triage` or this codebase's git history at
+all. Running this today vs. next week vs. on a different machine is the
+same sequence either way, as long as `ANTHROPIC_API_KEY` is set in `.env`
+first (copy `.env.example` if `.env` doesn't exist — `bootstrap.sh` does
+this for you).
 
 One caveat: LLM output isn't literally deterministic between runs
 (wording, exact title text will vary), which is exactly why `eval_set_b.py`
@@ -82,9 +116,10 @@ worked on mine.
 ## Demo walkthrough
 
 Each of these hits the real running service and creates/comments on a real
-Gitea issue — open `http://localhost:3000/triageadmin/bug-triage/issues`
-(login printed by `bootstrap.sh`, default `triageadmin` / `TriageAdmin123!`)
-in a second tab and watch it update as you run them.
+Gitea issue — open `http://localhost:3000/triageadmin/acme-app/issues`
+(the service's *target* repo, not `bug-triage` — see above; login printed
+by `bootstrap.sh`, default `triageadmin` / `TriageAdmin123!`) in a second
+tab and watch it update as you run them.
 
 ```bash
 # 1. Happy path: clean bug report -> new issue with severity + component labels

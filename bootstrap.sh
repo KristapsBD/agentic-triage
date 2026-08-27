@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
 # One-shot, idempotent bootstrap for a completely fresh clone/environment:
-# brings up Gitea, creates its admin user + API token + repo (the one part
-# that otherwise requires manually clicking through Gitea's web UI), and
-# writes the result into .env. Safe to re-run — it detects what already
-# exists and skips it.
+# brings up Gitea, creates its admin user + API token, and creates the
+# triage service's TARGET repo (GITEA_REPO_NAME in .env, default
+# "acme-app") — the one part that otherwise requires manually clicking
+# through Gitea's web UI. Safe to re-run — it detects what already exists
+# and skips it.
+#
+# Note: this only manages the service's target repo, not "bug-triage"
+# (this codebase's own Gitea project + its planning tickets #5-#14) — that
+# one is a one-time setup for hosting this project's own code/issues,
+# separate from resetting the demo. Keeping them apart means the triage
+# service's own build/planning tickets can never leak into its
+# duplicate-detection candidate pool. See service/README.md.
 #
 # Usage: ./bootstrap.sh
 set -euo pipefail
@@ -21,7 +29,7 @@ fi
 set -a; source "$ENV_FILE"; set +a
 GITEA_URL="${GITEA_URL:-http://localhost:3000}"
 GITEA_REPO_OWNER="${GITEA_REPO_OWNER:-triageadmin}"
-GITEA_REPO_NAME="${GITEA_REPO_NAME:-bug-triage}"
+GITEA_REPO_NAME="${GITEA_REPO_NAME:-acme-app}"
 
 set_env_var() {
     # set_env_var KEY VALUE — replaces KEY=... in .env, or appends it.
@@ -85,7 +93,7 @@ if [ "$TOKEN_OK" = false ]; then
     echo "    wrote GITEA_TOKEN to .env"
 fi
 
-echo "==> Ensuring repo '$GITEA_REPO_OWNER/$GITEA_REPO_NAME' exists"
+echo "==> Ensuring target repo '$GITEA_REPO_OWNER/$GITEA_REPO_NAME' exists (separate from bug-triage)"
 STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $GITEA_TOKEN" \
     "$GITEA_URL/api/v1/repos/$GITEA_REPO_OWNER/$GITEA_REPO_NAME")
 if [ "$STATUS" = "200" ]; then
