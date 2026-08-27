@@ -15,7 +15,7 @@ Once registered, `tea` infers the repo from the git remote when run inside a clo
 - **Read an issue**: `tea issues <index>` for details, `tea comment <index>` for the comment thread.
 - **List issues**: `tea issues list --output json`, with `--labels` and `--state` filters as needed.
 - **Comment on an issue**: `tea comment <index> "..."`.
-- **Apply / remove labels**: `tea label list` to see what's available, `tea issues edit <index> --add-label "..."` / `--remove-label "..."` (Gitea labels must exist in the repo first — create with `tea label create` if missing).
+- **Apply / remove labels**: `tea label list` to see what's available, `tea issues edit <index> --add-labels "..."` / `--remove-labels "..."` (plural flags — `tea issues edit --help` is the source of truth if this drifts again; Gitea labels must exist in the repo first — create with `tea label create` if missing).
 - **Close**: `tea comment <index> "..."` to explain, then `tea issues close <index>`.
 
 ## Pull requests as a triage surface
