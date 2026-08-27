@@ -1,0 +1,6 @@
+*:Zone.Identifier
+.env
+node_modules/
+__pycache__/
+*.pyc
+.venv/
