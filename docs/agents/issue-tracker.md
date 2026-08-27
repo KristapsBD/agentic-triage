@@ -4,6 +4,10 @@ Issues and specs for this repo live as issues in this repo's self-hosted Gitea i
 (see `1_candidate_brief.md` — stood up via docker-compose). Use the [`tea`](https://gitea.com/gitea/tea)
 CLI for all operations.
 
+> This convention is for agent/session use of the repo (e.g. an agent creating or
+> triaging issues on the user's behalf). The bug-triage service's own runtime path talks
+> to Gitea's REST API directly, not via `tea` — see [ADR-0004](../adr/0004-service-uses-gitea-rest-api-not-tea-cli.md).
+
 ## Setup
 
 `tea` needs a registered login before it works: `tea login add --name <name> --url <gitea-url> --token <token>`.

@@ -22,5 +22,31 @@ services:
       timeout: 5s
       retries: 20
 
+  triage-service:
+    build:
+      context: ./service
+    container_name: bug-triage-service
+    env_file:
+      - .env
+    environment:
+      # Override the host-facing GITEA_URL from .env with the in-network address.
+      - GITEA_URL=http://gitea:3000
+      - DECISION_DB_PATH=/data/decisions.sqlite3
+    volumes:
+      - ./service:/app
+      - triage-decisions:/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      gitea:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
 volumes:
   gitea-data:
+  triage-decisions:
