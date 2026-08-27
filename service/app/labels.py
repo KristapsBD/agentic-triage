@@ -12,6 +12,12 @@ NEEDS_TRIAGE = "needs-triage"
 NEEDS_INFO = "needs-info"
 FEATURE_REQUEST = "feature-request"
 
+# Every label the triage service itself can attach to an issue at runtime.
+# Used by scripts/seed_set_a.py to pre-create the full set (plus this repo's
+# separate workflow labels) so a fresh Gitea instance looks fully set up
+# before the first request, rather than growing labels lazily one at a time.
+ALL_TRIAGE_SERVICE_LABELS = (*COMPONENTS, *SEVERITIES, NEEDS_TRIAGE, NEEDS_INFO, FEATURE_REQUEST)
+
 # Default label colors (Gitea requires one at creation time). Cosmetic only.
 LABEL_COLORS = {
     NEEDS_TRIAGE: "#fbca04",

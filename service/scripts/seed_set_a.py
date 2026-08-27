@@ -16,7 +16,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.gitea_client import GiteaClient  # noqa: E402
+from app.labels import ALL_TRIAGE_SERVICE_LABELS  # noqa: E402
 from scripts._env import REPO_ROOT_ENV, load_dotenv  # noqa: E402
+
+# This repo's own triage-workflow labels (docs/agents/triage-labels.md),
+# not otherwise created by anything the triage service itself does.
+WORKFLOW_LABELS = ("ready-for-agent", "ready-for-human", "wontfix")
 
 SET_A = [
     {
@@ -63,6 +68,8 @@ def main() -> None:
         repo=os.environ["GITEA_REPO_NAME"],
         token=os.environ["GITEA_TOKEN"],
     )
+
+    client.ensure_labels([*ALL_TRIAGE_SERVICE_LABELS, *WORKFLOW_LABELS])
 
     for item in SET_A:
         existing = client.find_issue_by_title(item["title"])

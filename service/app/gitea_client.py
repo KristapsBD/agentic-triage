@@ -36,7 +36,11 @@ class GiteaClient:
             self._label_id_cache = {label["name"]: label["id"] for label in resp.json()}
         return self._label_id_cache
 
-    def _ensure_label_ids(self, names: list[str]) -> list[int]:
+    def ensure_labels(self, names: list[str]) -> list[int]:
+        """Create any of `names` that don't already exist in the repo, and
+        return the full set's label ids. Idempotent — safe to call every
+        startup/seed run.
+        """
         ids = self._label_ids()
         missing = [n for n in names if n not in ids]
         for name in missing:
@@ -50,7 +54,7 @@ class GiteaClient:
         return [ids[n] for n in names]
 
     def create_issue(self, title: str, body: str, labels: list[str]) -> int:
-        label_ids = self._ensure_label_ids(labels) if labels else []
+        label_ids = self.ensure_labels(labels) if labels else []
         resp = self._request("POST", "/issues", json={"title": title, "body": body, "labels": label_ids})
         return resp.json()["number"]
 
