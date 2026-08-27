@@ -67,6 +67,12 @@ distinct_issues: if (and only if) the Raw Report describes more than one
 genuinely distinct issue bundled together, list each one as a short
 description (2 or more entries). Otherwise leave as an empty list. Do not
 list sub-details of a single issue as if they were separate issues.
+A downstream symptom of the same root cause is a sub-detail, not a separate
+issue: "uploading a large file times out, and afterward the file list shows
+a broken thumbnail for it" is ONE issue (the failed upload), not two, even
+though it names two visible symptoms. Only use distinct_issues when the
+problems are independent -- different triggers, no plausible shared root
+cause, could be fixed one without the other.
 
 title: a concise, accurate, scannable title (not written in the reporter's
 tone/urgency).
