@@ -9,12 +9,14 @@ or sentence-transformers imports here. See docs/adr/0001-0008.
 from __future__ import annotations
 
 import hashlib
+import re
 import time
 
 from app.config import Settings
 from app.errors import GiteaError, PipelineUnavailableError
 from app.labels import FEATURE_REQUEST, NEEDS_INFO, NEEDS_TRIAGE
 from app.port import TriagePort
+from app.redaction import redact_secrets
 from app.retry import extract_with_retry_budgets
 from app.schemas import (
     DecisionRecord,
@@ -41,7 +43,26 @@ def _save(record: DecisionRecord, port: TriagePort) -> None:
 
 
 def _quote(raw_report: str) -> str:
-    return "\n".join(f"> {line}" for line in raw_report.splitlines()) or "> (empty)"
+    """Fence the Raw Report as a literal code block rather than a blockquote.
+
+    Two reasons, both from the same root cause: this is the one place the
+    Raw Report's exact original text (not the model's extracted fields)
+    always lands in a Gitea-visible body, so it's the one place that needs
+    its own defenses rather than relying on ADR-0007's typed-egress
+    guarantee, which only covers the model's output.
+
+    - Secrets/PII a reporter pastes in get redacted here (app/redaction.py)
+      -- this is the only call site for the verbatim quote, so it's the
+      single seam that guarantees no unredacted secret reaches Gitea this
+      way, without touching what extract()/judge_duplicate() see.
+    - A code fence is not interpreted as markdown by Gitea, so an embedded
+      image tag, @mention, or issue-closing keyword in the reporter's own
+      text renders as inert text instead of live markdown.
+    """
+    safe_report = redact_secrets(raw_report) if raw_report.strip() else "(empty)"
+    longest_backtick_run = max((len(run) for run in re.findall(r"`+", safe_report)), default=0)
+    fence = "`" * max(3, longest_backtick_run + 1)
+    return f"{fence}\n{safe_report}\n{fence}"
 
 
 def _issue_body(raw_report: str, rationale: str, extra: str = "") -> str:
@@ -57,7 +78,11 @@ def _bug_issue_body(raw_report: str, decision: TriageDecision) -> str:
         steps = "\n".join(f"{i}. {s}" for i, s in enumerate(decision.repro_steps, start=1))
     else:
         steps = "No reproduction steps provided."
-    evidence = decision.supporting_evidence.strip() if decision.supporting_evidence else "None."
+    # supporting_evidence is explicitly specified (llm_client.py's SYSTEM_PROMPT)
+    # to carry pasted logs/stack traces verbatim -- a second channel for a
+    # reporter's raw text to reach Gitea unmodified, same as the Raw Report
+    # quote below, so it gets the same secret-redaction treatment.
+    evidence = redact_secrets(decision.supporting_evidence.strip()) if decision.supporting_evidence else "None."
     rationale = (
         f"**Severity:** {decision.severity}\n"
         f"**Components:** {', '.join(decision.components) or 'unknown'}\n\n"
@@ -91,6 +116,71 @@ def _judge_duplicate_with_retry(port: TriagePort, raw_report: str, candidate, se
     return outcome.decision
 
 
+def _find_duplicate_verdict(port: TriagePort, raw_report: str, settings: Settings) -> DuplicateVerdict:
+    """Duplicate Candidate retrieval + judgment. Shared by every report_type
+    that can plausibly restate an existing issue (bug, unclear, bundled) --
+    only spam/feature_request skip it, since neither ever competes with an
+    existing bug issue for the same underlying defect.
+
+    Previously this lived inline in the bug-only branch below, which meant
+    an unclear or bundled report that happened to restate an existing issue
+    got no cross-link at all: a near-verbatim repeat of issue #1, phrased as
+    one of three bundled complaints, created a fresh needs-triage issue with
+    zero mention of #1. Running the same check here doesn't change the
+    outcome for unclear/bundled (still always review_flagged -- a human
+    still decides how to split or clarify), it just stops throwing away a
+    signal the pipeline already has the machinery to compute.
+    """
+    open_issues = port.list_open_issues()
+    candidates = port.find_candidates(raw_report, open_issues)
+
+    verdict = DuplicateVerdict(tier="not_a_duplicate")
+    if not candidates:
+        return verdict
+
+    best_yes = None
+    best_possibly = None
+    for candidate in candidates:
+        judgment = _judge_duplicate_with_retry(port, raw_report, candidate, settings)
+        if judgment is None:
+            continue
+        if judgment.same_bug == "yes" and best_yes is None:
+            best_yes = (candidate, judgment)
+        elif judgment.same_bug == "possibly" and best_possibly is None:
+            best_possibly = (candidate, judgment)
+
+    if best_yes is not None:
+        candidate, judgment = best_yes
+        return DuplicateVerdict(
+            tier="clear_duplicate",
+            target_issue=candidate.issue_number,
+            similarity=candidate.similarity,
+            # judgment.rationale is free text the model wrote after reading the
+            # *unredacted* raw report (a deliberate choice -- extract()/
+            # judge_duplicate() always see the original), so it can echo a
+            # secret back even though the raw report it was judging never
+            # appears verbatim here itself. Same redaction as the raw-report
+            # quote, applied at the one point every downstream body-construction
+            # site (comment body, review-flag reason, cross-link note) reads from.
+            rationale=redact_secrets(judgment.rationale),
+        )
+    if best_possibly is not None:
+        candidate, judgment = best_possibly
+        return DuplicateVerdict(
+            tier="possible_duplicate",
+            target_issue=candidate.issue_number,
+            similarity=candidate.similarity,
+            rationale=redact_secrets(judgment.rationale),
+        )
+    return verdict
+
+
+def _duplicate_cross_link_note(verdict: DuplicateVerdict) -> str:
+    if verdict.tier == "not_a_duplicate":
+        return ""
+    return f"### Possibly related to an existing issue\n\nSee #{verdict.target_issue} ({verdict.rationale})."
+
+
 def _route(
     decision: TriageDecision, raw_report: str, port: TriagePort, settings: Settings
 ) -> tuple[PendingAction, str, DuplicateVerdict | None]:
@@ -108,57 +198,32 @@ def _route(
         return action, "feature_request_filed", None
 
     if decision.report_type == "unclear":
+        verdict = _find_duplicate_verdict(port, raw_report, settings)
         reason = (
             "Report Type was classified as unclear — there's a real signal here but not "
             "enough detail to safely extract severity/components, so this was routed to a "
             "human rather than discarded."
         )
-        body = _review_flag_body(raw_report, reason)
+        body = _review_flag_body(raw_report, reason, extra=_duplicate_cross_link_note(verdict))
         action = PendingAction(type="create_issue", title=decision.title, body=body, labels=[NEEDS_INFO])
-        return action, "review_flagged", None
+        return action, "review_flagged", verdict
 
     # report_type == "bug" from here down.
     if decision.is_bundled:
         listing = "\n".join(f"- {issue}" for issue in decision.distinct_issues)
+        verdict = _find_duplicate_verdict(port, raw_report, settings)
         reason = (
             f"Report describes what looks like {len(decision.distinct_issues)} distinct "
             "issues, not auto-splitting — a human should decide how to split this."
         )
-        body = _review_flag_body(raw_report, reason, extra=f"### Distinct issues identified\n\n{listing}")
+        extra = "\n\n".join(
+            part for part in (f"### Distinct issues identified\n\n{listing}", _duplicate_cross_link_note(verdict)) if part
+        )
+        body = _review_flag_body(raw_report, reason, extra=extra)
         action = PendingAction(type="create_issue", title=decision.title, body=body, labels=[NEEDS_TRIAGE])
-        return action, "review_flagged", None
+        return action, "review_flagged", verdict
 
-    open_issues = port.list_open_issues()
-    candidates = port.find_candidates(raw_report, open_issues)
-
-    verdict = DuplicateVerdict(tier="not_a_duplicate")
-    if candidates:
-        best_yes = None
-        best_possibly = None
-        for candidate in candidates:
-            judgment = _judge_duplicate_with_retry(port, raw_report, candidate, settings)
-            if judgment is None:
-                continue
-            if judgment.same_bug == "yes" and best_yes is None:
-                best_yes = (candidate, judgment)
-            elif judgment.same_bug == "possibly" and best_possibly is None:
-                best_possibly = (candidate, judgment)
-        if best_yes is not None:
-            candidate, judgment = best_yes
-            verdict = DuplicateVerdict(
-                tier="clear_duplicate",
-                target_issue=candidate.issue_number,
-                similarity=candidate.similarity,
-                rationale=judgment.rationale,
-            )
-        elif best_possibly is not None:
-            candidate, judgment = best_possibly
-            verdict = DuplicateVerdict(
-                tier="possible_duplicate",
-                target_issue=candidate.issue_number,
-                similarity=candidate.similarity,
-                rationale=judgment.rationale,
-            )
+    verdict = _find_duplicate_verdict(port, raw_report, settings)
 
     if verdict.tier == "clear_duplicate":
         body = (

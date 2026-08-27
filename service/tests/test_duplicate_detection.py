@@ -81,6 +81,26 @@ def test_near_miss_same_area_different_bug_resolves_not_a_duplicate(port, settin
     assert not any(c.op == "comment_issue" for c in port.calls)
 
 
+def test_duplicate_judgment_rationale_is_redacted_before_reaching_gitea(port, settings):
+    """judgment.rationale is free text the model writes after reading the
+    *unredacted* raw report -- it can echo a secret back even when the raw
+    report itself is safely redacted in the same body (see app/redaction.py)."""
+    raw = "same crash as before, rotating my key didn't help either"  # no secret in the raw text itself
+    port.extraction_queue = [_bug_decision()]
+    candidate = DuplicateCandidate(issue_number=1, title="Login button unresponsive", body="...", similarity=0.9)
+    port.candidates_by_report[raw] = [candidate]
+    port.judgments_by_candidate[1] = DuplicateJudgment(
+        same_bug="yes", rationale="Same symptom; reporter's api_key=sk_live_FAKE1234567890abcdef also appears unrelated."
+    )
+
+    envelope = process_report(raw, port, settings)
+
+    assert envelope.duplicate_verdict.rationale is not None
+    assert "sk_live_FAKE1234567890abcdef" not in envelope.duplicate_verdict.rationale
+    comment_body = next(c for c in port.calls if c.op == "comment_issue").args[1]
+    assert "sk_live_FAKE1234567890abcdef" not in comment_body
+
+
 def test_possible_duplicate_creates_cross_linked_flagged_issue(port, settings):
     raw = "login seems flaky on some phones"
     port.extraction_queue = [_bug_decision()]
