@@ -124,6 +124,15 @@ function all(...checks: Check[]): Check {
   return (body) => checks.flatMap((c) => c(body));
 }
 
+function checkNotClearDuplicateOfIssue(issueNumber: number): Check {
+  return (body) => {
+    const verdict = body.duplicate_verdict;
+    return verdict?.tier === 'clear_duplicate' && verdict.target_issue === issueNumber
+      ? [`duplicate tier falsely resolved clear_duplicate against issue #${issueNumber}, a materially different problem`]
+      : [];
+  };
+}
+
 // Fixed Set A/B issue numbers on the standard seeded acme-app instance, per
 // README's demo walkthrough + eval-set-b (#1 Login, #2 CSV export, #8
 // Footer copyright year from B4). If your instance differs, these
@@ -314,6 +323,37 @@ const CASES: Case[] = [
       'perfil mayor a 3MB en Android. Probe con tres imagenes distintas, mismo ' +
       'resultado. En iOS funciona bien.',
     check: checkReportType('bug'),
+  },
+  // Ticket #47: probes of the embedding-retrieval layer specifically, not
+  // the duplicate-judgment LLM call -- can a paraphrase's surface vocabulary
+  // pull it close enough to an unrelated existing issue's embedding to fool
+  // the tier, and can a genuine duplicate's wording push it far enough away
+  // to evade retrieval entirely.
+  {
+    id: 'D1_paraphrase_engineered_near_issue1_different_bug',
+    rawReport:
+      "On iOS Safari, tapping 'Log in' looks like nothing happens for a few seconds -- the " +
+      "button just sits there -- but the login actually succeeds behind the scenes and the " +
+      'redirect eventually fires anyway once you wait it out. Started right after we shipped ' +
+      "the 3.6 release. Desktop Chrome shows the same brief delay but it's barely noticeable " +
+      'there.',
+    // Same surface vocabulary as issue #1 (iOS Safari, "Log in" button, tap,
+    // nothing happens, desktop Chrome, started after a release) but a
+    // materially different bug: a cosmetic perceived-delay where login
+    // succeeds, vs. #1 where the button is completely non-functional.
+    check: checkNotClearDuplicateOfIssue(1),
+  },
+  {
+    id: 'D2_genuine_duplicate_of_issue3_embedding_distant',
+    rawReport:
+      "The 'forgot your credentials' flow always claims it worked, but the recovery message " +
+      "that's supposed to land in someone's mailbox just... doesn't. Not even buried in junk. " +
+      "We've confirmed this across a handful of different accounts now.",
+    // Same underlying bug as issue #3 (password reset email never arrives),
+    // deliberately reworded away from its vocabulary (credentials/recovery
+    // message/mailbox/junk vs. password reset/email/spam) to test whether
+    // retrieval still surfaces it. Left observational -- whether embedding
+    // similarity clears the floor here is itself the open question.
   },
 ];
 
