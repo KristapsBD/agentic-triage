@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch",
-    "seed:set-a": "ts-node src/scripts/seed-set-a.ts"
+    "seed:set-a": "ts-node src/scripts/seed-set-a.ts",
+    "tune:duplicate-floor": "ts-node src/scripts/tune-duplicate-floor.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",

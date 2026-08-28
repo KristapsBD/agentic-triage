@@ -26,7 +26,7 @@ describe('ReportsModule wiring', () => {
     expect(moduleRef.get(PipelineService)).toBeInstanceOf(PipelineService);
   });
 
-  it('binds every TriagePort method, with Gitea/LLM ones delegating and the rest stubbed', async () => {
+  it('binds every TriagePort method, with Gitea/LLM/embedding ones delegating and Decision Record methods stubbed', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [ConfigModule, GiteaModule, LlmModule, ReportsModule],
     }).compile();
@@ -37,10 +37,11 @@ describe('ReportsModule wiring', () => {
     expect(typeof port.commentIssue).toBe('function');
     expect(typeof port.listOpenIssues).toBe('function');
     expect(typeof port.extract).toBe('function');
-    await expect(port.findCandidates('report text', [])).rejects.toThrow(/not implemented/);
-    await expect(
-      port.judgeDuplicate('report text', { issue_number: 1, title: 't', body: 'b', similarity: 0.5 }),
-    ).rejects.toThrow(/not implemented/);
+    // findCandidates/judgeDuplicate now delegate to real providers (#30) --
+    // calling them here would hit the live embedding model/Anthropic API,
+    // so this just confirms they're wired, not stubbed placeholders.
+    expect(typeof port.findCandidates).toBe('function');
+    expect(typeof port.judgeDuplicate).toBe('function');
     await expect(
       port.saveDecisionRecord({
         report_hash: 'h',

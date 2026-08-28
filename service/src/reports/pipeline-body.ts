@@ -62,3 +62,10 @@ export function bugIssueBody(rawReport: string, decision: TriageDecision): strin
 export function reviewFlagBody(rawReport: string, reason: string, extra = ''): string {
   return issueBody(rawReport, `**Why this needs review:** ${reason}`, extra);
 }
+
+export function duplicateCommentBody(rawReport: string, rationale: string): string {
+  return (
+    `Automated triage matched this report as a duplicate of this issue (${rationale}).\n\n` +
+    `### New report (verbatim)\n\n${quote(rawReport)}`
+  );
+}
