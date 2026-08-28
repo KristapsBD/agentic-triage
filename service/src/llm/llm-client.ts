@@ -174,11 +174,18 @@ export class LlmClient {
     return parseTriageDecision(toolUse.input);
   }
 
-  async judgeDuplicate(rawReport: string, candidate: DuplicateCandidate): Promise<DuplicateJudgment> {
-    const userContent =
+  async judgeDuplicate(
+    rawReport: string,
+    candidate: DuplicateCandidate,
+    feedback?: string | null,
+  ): Promise<DuplicateJudgment> {
+    let userContent =
       `<untrusted_raw_report>\n${rawReport}\n</untrusted_raw_report>\n\n` +
       `<untrusted_candidate_issue number="${candidate.issue_number}">\n` +
       `${candidate.title}\n\n${candidate.body}\n</untrusted_candidate_issue>`;
+    if (feedback) {
+      userContent += `\n\nYour previous tool call failed validation with this error:\n${feedback}\nCorrect it and call the tool again.`;
+    }
 
     const response = await transientWrapped(() =>
       this.client.messages.create({

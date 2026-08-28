@@ -9,15 +9,25 @@
  * before creating a fresh issue (three-tier verdict, ADR-0005) — a clear
  * duplicate comments on the existing issue instead of creating a new one; a
  * possible duplicate still creates a new issue but cross-linked and
- * Review Flagged; not_a_duplicate is the #29 behavior unchanged. No retries
- * yet (#31), no duplicate check on the unclear/bundled paths yet (#32), no
- * Decision Record persistence yet (#33).
+ * Review Flagged; not_a_duplicate is the #29 behavior unchanged.
+ *
+ * Ticket #31 scope adds: both the extraction call and every duplicate-
+ * judgment call (via findDuplicateVerdict) run behind the two independent
+ * retry budgets (ADR-0008, see retry.ts). Exhausting the transient budget
+ * surfaces as PipelineUnavailableError (502, retry-safe); exhausting the
+ * validation budget for extraction degrades to a needs-triage Gitea issue
+ * rather than a crash or a silent drop — mirrors app/pipeline.py's
+ * process_report() ahead of #32's fuller Review Flag unification and #33's
+ * Decision Record persistence (not yet wired here).
  */
 
 import { Inject, Injectable } from '@nestjs/common';
+import { SETTINGS } from '../config/settings';
 import { NEEDS_TRIAGE, FEATURE_REQUEST, NEEDS_INFO } from '../gitea/labels';
 import { findDuplicateVerdict } from './duplicate-verdict';
-import { bugIssueBody, duplicateCommentBody, issueBody, reviewFlagBody } from './pipeline-body';
+import { bugIssueBody, duplicateCommentBody, hashReport, issueBody, reviewFlagBody } from './pipeline-body';
+import { PipelineUnavailableError } from './pipeline.errors';
+import { RetryBudgets, withRetryBudgets } from './retry';
 import { TRIAGE_PORT, TriagePort } from './triage-port.interface';
 import { DuplicateVerdict, ResponseEnvelope, TriageDecision } from './types';
 
@@ -26,13 +36,38 @@ const UNCLEAR_REASON =
   'enough detail to safely extract severity/components, so this was routed to a ' +
   'human rather than discarded.';
 
+const VALIDATION_FAILED_NOTE =
+  "Automated triage failed: the model's structured output kept failing " +
+  'validation across every retry. This issue was filed automatically as a ' +
+  'safe fallback rather than being dropped or crashing the request.';
+
+// Only used as the fallback when PipelineService is constructed directly
+// (tests) rather than through Nest DI, which always resolves the real
+// Settings via the SETTINGS token instead.
+const DEFAULT_RETRY_BUDGETS: RetryBudgets = {
+  validation_retry_budget: 2,
+  transient_retry_budget: 3,
+  transient_retry_backoff_seconds: 0,
+};
+
 @Injectable()
 export class PipelineService {
-  constructor(@Inject(TRIAGE_PORT) private readonly port: TriagePort) {}
+  constructor(
+    @Inject(TRIAGE_PORT) private readonly port: TriagePort,
+    @Inject(SETTINGS) private readonly settings: RetryBudgets = DEFAULT_RETRY_BUDGETS,
+  ) {}
 
   async processReport(rawReport: string): Promise<ResponseEnvelope> {
-    const decision = await this.port.extract(rawReport, null);
+    const outcome = await withRetryBudgets((feedback) => this.port.extract(rawReport, feedback), this.settings);
 
+    if (outcome.failure === 'transient_exhausted') {
+      throw new PipelineUnavailableError(hashReport(rawReport), 'llm_unavailable', outcome.lastError ?? '');
+    }
+    if (outcome.failure === 'validation_exhausted') {
+      return this.filedValidationFailed(rawReport);
+    }
+
+    const decision = outcome.result as TriageDecision;
     switch (decision.report_type) {
       case 'spam_or_off_topic':
         return this.dropped(decision);
@@ -43,6 +78,12 @@ export class PipelineService {
       case 'bug':
         return this.filedAsBug(rawReport, decision);
     }
+  }
+
+  private async filedValidationFailed(rawReport: string): Promise<ResponseEnvelope> {
+    const body = reviewFlagBody(rawReport, VALIDATION_FAILED_NOTE);
+    const issueNumber = await this.port.createIssue('Automated triage failed for incoming report', body, [NEEDS_TRIAGE]);
+    return { outcome: 'review_flagged', gitea_issue_number: issueNumber, triage_decision: null, duplicate_verdict: null };
   }
 
   private dropped(decision: TriageDecision): ResponseEnvelope {
@@ -76,7 +117,7 @@ export class PipelineService {
       throw new Error('bug reports always get a severity from the extraction schema');
     }
 
-    const verdict = await findDuplicateVerdict(this.port, rawReport);
+    const verdict = await findDuplicateVerdict(this.port, rawReport, this.settings);
 
     if (verdict.tier === 'clear_duplicate') {
       const body = duplicateCommentBody(rawReport, verdict.rationale);

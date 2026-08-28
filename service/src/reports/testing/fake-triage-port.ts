@@ -21,6 +21,7 @@ export class FakeTriagePort implements TriagePort {
   extractionQueue: Array<TriageDecision | Error> = [];
   candidatesByReport = new Map<string, DuplicateCandidate[]>();
   judgmentsByCandidate = new Map<number, DuplicateJudgment>();
+  judgeDuplicateQueueByCandidate = new Map<number, Array<DuplicateJudgment | Error>>();
   createIssueShouldFail = false;
   commentShouldFail = false;
 
@@ -66,8 +67,16 @@ export class FakeTriagePort implements TriagePort {
     return this.candidatesByReport.get(rawReport) ?? [];
   }
 
-  async judgeDuplicate(rawReport: string, candidate: DuplicateCandidate): Promise<DuplicateJudgment> {
-    this.calls.push({ op: 'judge_duplicate', args: [rawReport, candidate.issue_number] });
+  async judgeDuplicate(rawReport: string, candidate: DuplicateCandidate, feedback?: string | null): Promise<DuplicateJudgment> {
+    this.calls.push({ op: 'judge_duplicate', args: [rawReport, candidate.issue_number, feedback ?? null] });
+    const queue = this.judgeDuplicateQueueByCandidate.get(candidate.issue_number);
+    if (queue && queue.length > 0) {
+      const item = queue.shift() as DuplicateJudgment | Error;
+      if (item instanceof Error) {
+        throw item;
+      }
+      return item;
+    }
     const judgment = this.judgmentsByCandidate.get(candidate.issue_number);
     if (!judgment) {
       throw new Error(`no scripted judgment for candidate #${candidate.issue_number}`);

@@ -26,7 +26,7 @@ export interface TriagePort {
   // --- LLM/embedding-facing ---
   extract(rawReport: string, feedback?: string | null): Promise<TriageDecision>;
   findCandidates(rawReport: string, openIssues: GiteaIssue[]): Promise<DuplicateCandidate[]>;
-  judgeDuplicate(rawReport: string, candidate: DuplicateCandidate): Promise<DuplicateJudgment>;
+  judgeDuplicate(rawReport: string, candidate: DuplicateCandidate, feedback?: string | null): Promise<DuplicateJudgment>;
 
   // --- Decision Record persistence ---
   saveDecisionRecord(record: DecisionRecord): Promise<void>;
