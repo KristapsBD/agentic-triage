@@ -12,6 +12,7 @@ import {
   DuplicateCandidate,
   DuplicateJudgment,
   GiteaIssue,
+  TokenUsage,
   TriageDecision,
 } from './types';
 
@@ -24,9 +25,15 @@ export interface TriagePort {
   listOpenIssues(): Promise<GiteaIssue[]>;
 
   // --- LLM/embedding-facing ---
-  extract(rawReport: string, feedback?: string | null): Promise<TriageDecision>;
+  // Ticket #40: usage bundled alongside the parsed result so the Decision
+  // Record can capture token cost per call without a second round trip.
+  extract(rawReport: string, feedback?: string | null): Promise<{ decision: TriageDecision; usage: TokenUsage }>;
   findCandidates(rawReport: string, openIssues: GiteaIssue[]): Promise<DuplicateCandidate[]>;
-  judgeDuplicate(rawReport: string, candidate: DuplicateCandidate, feedback?: string | null): Promise<DuplicateJudgment>;
+  judgeDuplicate(
+    rawReport: string,
+    candidate: DuplicateCandidate,
+    feedback?: string | null,
+  ): Promise<{ judgment: DuplicateJudgment; usage: TokenUsage }>;
 
   // --- Decision Record persistence ---
   saveDecisionRecord(record: DecisionRecord): Promise<void>;

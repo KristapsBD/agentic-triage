@@ -56,7 +56,17 @@ import { PipelineUnavailableError } from './pipeline.errors';
 import { RetryBudgets, withRetryBudgets } from './retry';
 import { isBundled } from './schemas';
 import { TRIAGE_PORT, TriagePort } from './triage-port.interface';
-import { DecisionRecord, DuplicateVerdict, Outcome, PendingAction, ResponseEnvelope, TriageDecision } from './types';
+import {
+  DecisionRecord,
+  DuplicateCandidateConsidered,
+  DuplicateVerdict,
+  LlmCallUsage,
+  Outcome,
+  PendingAction,
+  ResponseEnvelope,
+  StageTiming,
+  TriageDecision,
+} from './types';
 
 const UNCLEAR_REASON =
   "Report Type was classified as unclear — there's a real signal here but not " +
@@ -82,9 +92,14 @@ interface RoutingResult {
   outcome: Outcome;
   verdict: DuplicateVerdict | null;
   confidence: ConfidenceResult;
+  candidatesConsidered: DuplicateCandidateConsidered[];
+  tokenUsage: LlmCallUsage[];
+  stageTimings: StageTiming[];
+  transientRetriesConsumed: number;
 }
 
 const NO_ACTION: PendingAction = { type: 'none', title: null, body: null, labels: [], target_issue: null };
+const NO_EVIDENCE = { candidatesConsidered: [] as DuplicateCandidateConsidered[], tokenUsage: [] as LlmCallUsage[], stageTimings: [] as StageTiming[], transientRetriesConsumed: 0 };
 
 @Injectable()
 export class PipelineService {
@@ -110,7 +125,10 @@ export class PipelineService {
     await this.save(record);
 
     if (record.triage_decision === null) {
+      const stageStart = Date.now();
       const outcome = await withRetryBudgets((feedback) => this.port.extract(rawReport, feedback), this.settings);
+      record.stage_timings_ms.push({ stage: 'extraction', duration_ms: Date.now() - stageStart, candidate_issue_number: null });
+      record.transient_retries_consumed += outcome.transientAttempts;
 
       if (outcome.failure === 'transient_exhausted') {
         throw new PipelineUnavailableError(reportHash, 'llm_unavailable', outcome.lastError ?? '');
@@ -138,7 +156,9 @@ export class PipelineService {
         return this.executePendingAction(record);
       }
 
-      record.triage_decision = outcome.result as TriageDecision;
+      const { decision, usage } = outcome.result as { decision: TriageDecision; usage: { input_tokens: number; output_tokens: number } };
+      record.triage_decision = decision;
+      record.token_usage.push({ call: 'extract', candidate_issue_number: null, ...usage });
       record.validation_retries_consumed = outcome.validationAttempts;
       record.validation_budget_exhausted = false;
       await this.save(record);
@@ -147,11 +167,15 @@ export class PipelineService {
     const decision = record.triage_decision;
 
     if (record.pending_action === null) {
-      const { action, outcome, verdict, confidence } = await this.route(decision, rawReport, record.validation_retries_consumed);
-      record.pending_action = action;
-      record.outcome = outcome;
-      record.duplicate_verdict = verdict;
-      record.confidence = confidence.band;
+      const routing = await this.route(decision, rawReport, record.validation_retries_consumed);
+      record.pending_action = routing.action;
+      record.outcome = routing.outcome;
+      record.duplicate_verdict = routing.verdict;
+      record.confidence = routing.confidence.band;
+      record.duplicate_candidates_considered = routing.candidatesConsidered;
+      record.token_usage.push(...routing.tokenUsage);
+      record.stage_timings_ms.push(...routing.stageTimings);
+      record.transient_retries_consumed += routing.transientRetriesConsumed;
       await this.save(record);
     }
 
@@ -172,7 +196,7 @@ export class PipelineService {
         duplicateVerdictTier: null,
         reviewFlagged: false,
       });
-      return { action: NO_ACTION, outcome: 'dropped_spam', verdict: null, confidence };
+      return { action: NO_ACTION, outcome: 'dropped_spam', verdict: null, confidence, ...NO_EVIDENCE };
     }
 
     if (decision.report_type === 'feature_request') {
@@ -184,20 +208,29 @@ export class PipelineService {
       });
       const body = issueBody(rawReport, `**Report Type:** feature_request\n\n${decision.title}`);
       const action: PendingAction = { type: 'create_issue', title: decision.title, body, labels: [FEATURE_REQUEST], target_issue: null };
-      return { action, outcome: 'feature_request_filed', verdict: null, confidence };
+      return { action, outcome: 'feature_request_filed', verdict: null, confidence, ...NO_EVIDENCE };
     }
 
     if (decision.report_type === 'unclear') {
-      const verdict = await findDuplicateVerdict(this.port, rawReport, this.settings);
+      const detection = await findDuplicateVerdict(this.port, rawReport, this.settings);
       const confidence = computeConfidence({
         validationRetriesConsumed,
         validationBudgetExhausted: false,
-        duplicateVerdictTier: verdict.tier,
+        duplicateVerdictTier: detection.verdict.tier,
         reviewFlagged: true,
       });
-      const body = reviewFlagBody(rawReport, UNCLEAR_REASON, confidence, duplicateCrossLinkNote(verdict));
+      const body = reviewFlagBody(rawReport, UNCLEAR_REASON, confidence, duplicateCrossLinkNote(detection.verdict));
       const action: PendingAction = { type: 'create_issue', title: decision.title, body, labels: [NEEDS_INFO], target_issue: null };
-      return { action, outcome: 'review_flagged', verdict, confidence };
+      return {
+        action,
+        outcome: 'review_flagged',
+        verdict: detection.verdict,
+        confidence,
+        candidatesConsidered: detection.candidatesConsidered,
+        tokenUsage: detection.tokenUsage,
+        stageTimings: detection.stageTimings,
+        transientRetriesConsumed: detection.transientRetriesConsumed,
+      };
     }
 
     // report_type === 'bug' from here down.
@@ -209,7 +242,14 @@ export class PipelineService {
       return this.routeBundled(decision, rawReport, validationRetriesConsumed);
     }
 
-    const verdict = await findDuplicateVerdict(this.port, rawReport, this.settings);
+    const detection = await findDuplicateVerdict(this.port, rawReport, this.settings);
+    const verdict = detection.verdict;
+    const evidence = {
+      candidatesConsidered: detection.candidatesConsidered,
+      tokenUsage: detection.tokenUsage,
+      stageTimings: detection.stageTimings,
+      transientRetriesConsumed: detection.transientRetriesConsumed,
+    };
 
     if (verdict.tier === 'clear_duplicate') {
       const confidence = computeConfidence({
@@ -220,7 +260,7 @@ export class PipelineService {
       });
       const body = duplicateCommentBody(rawReport, verdict.rationale);
       const action: PendingAction = { type: 'comment', title: null, body, labels: [], target_issue: verdict.target_issue };
-      return { action, outcome: 'duplicate_commented', verdict, confidence };
+      return { action, outcome: 'duplicate_commented', verdict, confidence, ...evidence };
     }
 
     if (verdict.tier === 'possible_duplicate') {
@@ -236,7 +276,7 @@ export class PipelineService {
         'risking a false merge.';
       const body = reviewFlagBody(rawReport, reason, confidence, `### Possible duplicate\n\nSee #${verdict.target_issue}.`);
       const action: PendingAction = { type: 'create_issue', title: decision.title, body, labels: [NEEDS_TRIAGE], target_issue: null };
-      return { action, outcome: 'review_flagged', verdict, confidence };
+      return { action, outcome: 'review_flagged', verdict, confidence, ...evidence };
     }
 
     const confidence = computeConfidence({
@@ -248,27 +288,36 @@ export class PipelineService {
     const body = bugIssueBody(rawReport, decision);
     const labels = [decision.severity, ...decision.components];
     const action: PendingAction = { type: 'create_issue', title: decision.title, body, labels, target_issue: null };
-    return { action, outcome: 'issue_created', verdict, confidence };
+    return { action, outcome: 'issue_created', verdict, confidence, ...evidence };
   }
 
   private async routeBundled(decision: TriageDecision, rawReport: string, validationRetriesConsumed: number): Promise<RoutingResult> {
-    const verdict = await findDuplicateVerdict(this.port, rawReport, this.settings);
+    const detection = await findDuplicateVerdict(this.port, rawReport, this.settings);
     const confidence = computeConfidence({
       validationRetriesConsumed,
       validationBudgetExhausted: false,
-      duplicateVerdictTier: verdict.tier,
+      duplicateVerdictTier: detection.verdict.tier,
       reviewFlagged: true,
     });
     const listing = decision.distinct_issues.map((issue) => `- ${issue}`).join('\n');
     const reason =
       `Report describes what looks like ${decision.distinct_issues.length} distinct ` +
       "issues, not auto-splitting — a human should decide how to split this.";
-    const extra = [`### Distinct issues identified\n\n${listing}`, duplicateCrossLinkNote(verdict)]
+    const extra = [`### Distinct issues identified\n\n${listing}`, duplicateCrossLinkNote(detection.verdict)]
       .filter((part) => part.trim())
       .join('\n\n');
     const body = reviewFlagBody(rawReport, reason, confidence, extra);
     const action: PendingAction = { type: 'create_issue', title: decision.title, body, labels: [NEEDS_TRIAGE], target_issue: null };
-    return { action, outcome: 'review_flagged', verdict, confidence };
+    return {
+      action,
+      outcome: 'review_flagged',
+      verdict: detection.verdict,
+      confidence,
+      candidatesConsidered: detection.candidatesConsidered,
+      tokenUsage: detection.tokenUsage,
+      stageTimings: detection.stageTimings,
+      transientRetriesConsumed: detection.transientRetriesConsumed,
+    };
   }
 
   /**
@@ -287,12 +336,16 @@ export class PipelineService {
         if (action.title === null || action.body === null) {
           throw new Error('create_issue action missing title/body');
         }
+        const stageStart = Date.now();
         record.gitea_issue_number = await this.port.createIssue(action.title, action.body, action.labels);
+        record.stage_timings_ms.push({ stage: 'gitea_create_issue', duration_ms: Date.now() - stageStart, candidate_issue_number: null });
       } else if (action.type === 'comment') {
         if (action.target_issue === null || action.body === null) {
           throw new Error('comment action missing target_issue/body');
         }
+        const stageStart = Date.now();
         await this.port.commentIssue(action.target_issue, action.body);
+        record.stage_timings_ms.push({ stage: 'gitea_comment_issue', duration_ms: Date.now() - stageStart, candidate_issue_number: null });
         record.gitea_issue_number = action.target_issue;
       }
       record.status = 'completed';
@@ -326,6 +379,10 @@ export class PipelineService {
       validation_retries_consumed: 0,
       validation_budget_exhausted: false,
       confidence: null,
+      transient_retries_consumed: 0,
+      duplicate_candidates_considered: [],
+      token_usage: [],
+      stage_timings_ms: [],
     };
   }
 

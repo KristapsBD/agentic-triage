@@ -61,6 +61,10 @@ describe('ReportsModule wiring', () => {
       validation_retries_consumed: 0,
       validation_budget_exhausted: false,
       confidence: null,
+      transient_retries_consumed: 0,
+      duplicate_candidates_considered: [],
+      token_usage: [],
+      stage_timings_ms: [],
     };
     await port.saveDecisionRecord(record);
     await expect(port.getDecisionRecord('h')).resolves.toEqual(record);

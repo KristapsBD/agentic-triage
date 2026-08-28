@@ -7,21 +7,29 @@
 
 import { GiteaError } from '../../gitea/gitea.errors';
 import { TriagePort } from '../triage-port.interface';
-import { DecisionRecord, DuplicateCandidate, DuplicateJudgment, GiteaIssue, TriageDecision } from '../types';
+import { DecisionRecord, DuplicateCandidate, DuplicateJudgment, GiteaIssue, TokenUsage, TriageDecision } from '../types';
 
 export interface PortCall {
   op: string;
   args: unknown[];
 }
 
+// Ticket #40: most tests don't care about token usage, so extract()/
+// judgeDuplicate() fall back to this rather than forcing every existing
+// extractionQueue/judgmentsByCandidate entry in the suite to carry one.
+// Tests that do care push onto extractionUsageQueue/judgeDuplicateUsageByCandidate.
+const DEFAULT_USAGE: TokenUsage = { input_tokens: 0, output_tokens: 0 };
+
 export class FakeTriagePort implements TriagePort {
   calls: PortCall[] = [];
   openIssues: GiteaIssue[] = [];
 
   extractionQueue: Array<TriageDecision | Error> = [];
+  extractionUsageQueue: TokenUsage[] = [];
   candidatesByReport = new Map<string, DuplicateCandidate[]>();
   judgmentsByCandidate = new Map<number, DuplicateJudgment>();
   judgeDuplicateQueueByCandidate = new Map<number, Array<DuplicateJudgment | Error>>();
+  judgeDuplicateUsageByCandidate = new Map<number, TokenUsage[]>();
   createIssueShouldFail = false;
   commentShouldFail = false;
 
@@ -50,7 +58,7 @@ export class FakeTriagePort implements TriagePort {
     return [...this.openIssues];
   }
 
-  async extract(rawReport: string, feedback?: string | null): Promise<TriageDecision> {
+  async extract(rawReport: string, feedback?: string | null): Promise<{ decision: TriageDecision; usage: TokenUsage }> {
     this.calls.push({ op: 'extract', args: [rawReport, feedback ?? null] });
     const item = this.extractionQueue.shift();
     if (item === undefined) {
@@ -59,7 +67,7 @@ export class FakeTriagePort implements TriagePort {
     if (item instanceof Error) {
       throw item;
     }
-    return item;
+    return { decision: item, usage: this.extractionUsageQueue.shift() ?? DEFAULT_USAGE };
   }
 
   async findCandidates(rawReport: string, _openIssues: GiteaIssue[]): Promise<DuplicateCandidate[]> {
@@ -67,21 +75,26 @@ export class FakeTriagePort implements TriagePort {
     return this.candidatesByReport.get(rawReport) ?? [];
   }
 
-  async judgeDuplicate(rawReport: string, candidate: DuplicateCandidate, feedback?: string | null): Promise<DuplicateJudgment> {
+  async judgeDuplicate(
+    rawReport: string,
+    candidate: DuplicateCandidate,
+    feedback?: string | null,
+  ): Promise<{ judgment: DuplicateJudgment; usage: TokenUsage }> {
     this.calls.push({ op: 'judge_duplicate', args: [rawReport, candidate.issue_number, feedback ?? null] });
+    const usage = this.judgeDuplicateUsageByCandidate.get(candidate.issue_number)?.shift() ?? DEFAULT_USAGE;
     const queue = this.judgeDuplicateQueueByCandidate.get(candidate.issue_number);
     if (queue && queue.length > 0) {
       const item = queue.shift() as DuplicateJudgment | Error;
       if (item instanceof Error) {
         throw item;
       }
-      return item;
+      return { judgment: item, usage };
     }
     const judgment = this.judgmentsByCandidate.get(candidate.issue_number);
     if (!judgment) {
       throw new Error(`no scripted judgment for candidate #${candidate.issue_number}`);
     }
-    return judgment;
+    return { judgment, usage };
   }
 
   async saveDecisionRecord(record: DecisionRecord): Promise<void> {

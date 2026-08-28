@@ -1,5 +1,7 @@
 /** Ticket #30: embedding retrieval + three-tier Duplicate Verdict. */
 
+import { hashReport } from './pipeline-body';
+import { ExtractionValidationError } from './pipeline.errors';
 import { PipelineService } from './pipeline.service';
 import { FakeTriagePort } from './testing/fake-triage-port';
 import { DuplicateCandidate, DuplicateJudgment, TriageDecision } from './types';
@@ -122,5 +124,35 @@ describe('PipelineService (duplicate detection)', () => {
     expect(body).toContain('#1');
     expect(labels).toContain('needs-triage');
     expect(port.calls.some((c) => c.op === 'comment_issue')).toBe(false);
+  });
+
+  it('records every candidate considered, not just the winner, including a validation-exhausted skip (#40)', async () => {
+    const raw = 'multiple candidates in play';
+    const port = new FakeTriagePort();
+    port.extractionQueue = [bugDecision()];
+    const candidates: DuplicateCandidate[] = [
+      { issue_number: 1, title: 'unrelated', body: '...', similarity: 0.4 },
+      { issue_number: 2, title: 'skipped', body: '...', similarity: 0.5 },
+      { issue_number: 3, title: 'the winner', body: '...', similarity: 0.9 },
+    ];
+    port.candidatesByReport.set(raw, candidates);
+    port.judgmentsByCandidate.set(1, { same_bug: 'no', rationale: 'different area' });
+    port.judgeDuplicateQueueByCandidate.set(2, [
+      new ExtractionValidationError('bad'),
+      new ExtractionValidationError('bad'),
+      new ExtractionValidationError('bad'),
+    ]);
+    port.judgmentsByCandidate.set(3, { same_bug: 'yes', rationale: 'same root cause' });
+
+    await new PipelineService(port).processReport(raw);
+
+    const record = await port.getDecisionRecord(hashReport(raw));
+    expect(record!.duplicate_candidates_considered).toEqual([
+      { issue_number: 1, similarity: 0.4, same_bug: 'no' },
+      { issue_number: 2, similarity: 0.5, same_bug: null },
+      { issue_number: 3, similarity: 0.9, same_bug: 'yes' },
+    ]);
+    const dupUsageEntries = record!.token_usage.filter((u) => u.call === 'duplicate_judgment');
+    expect(dupUsageEntries.map((u) => u.candidate_issue_number)).toEqual([1, 3]);
   });
 });

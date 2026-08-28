@@ -14,7 +14,7 @@ import { SETTINGS, Settings } from '../config/settings';
 import { COMPONENTS, SEVERITIES } from '../gitea/labels';
 import { ExtractionValidationError, TransientAPIError } from '../reports/pipeline.errors';
 import { parseDuplicateJudgment, parseTriageDecision } from '../reports/schemas';
-import { DuplicateCandidate, DuplicateJudgment, TriageDecision } from '../reports/types';
+import { DuplicateCandidate, DuplicateJudgment, TokenUsage, TriageDecision } from '../reports/types';
 
 const SYSTEM_PROMPT = `You are the extraction stage of an automated bug-triage pipeline.
 
@@ -150,7 +150,7 @@ export class LlmClient {
     this.model = settings.anthropic_model;
   }
 
-  async extract(rawReport: string, feedback?: string | null): Promise<TriageDecision> {
+  async extract(rawReport: string, feedback?: string | null): Promise<{ decision: TriageDecision; usage: TokenUsage }> {
     let userContent = `<untrusted_raw_report>\n${rawReport}\n</untrusted_raw_report>`;
     if (feedback) {
       userContent += `\n\nYour previous tool call failed validation with this error:\n${feedback}\nCorrect it and call the tool again.`;
@@ -171,14 +171,17 @@ export class LlmClient {
     if (!toolUse) {
       throw new ExtractionValidationError('model response contained no tool_use block');
     }
-    return parseTriageDecision(toolUse.input);
+    return {
+      decision: parseTriageDecision(toolUse.input),
+      usage: { input_tokens: response.usage.input_tokens, output_tokens: response.usage.output_tokens },
+    };
   }
 
   async judgeDuplicate(
     rawReport: string,
     candidate: DuplicateCandidate,
     feedback?: string | null,
-  ): Promise<DuplicateJudgment> {
+  ): Promise<{ judgment: DuplicateJudgment; usage: TokenUsage }> {
     let userContent =
       `<untrusted_raw_report>\n${rawReport}\n</untrusted_raw_report>\n\n` +
       `<untrusted_candidate_issue number="${candidate.issue_number}">\n` +
@@ -202,6 +205,9 @@ export class LlmClient {
     if (!toolUse) {
       throw new ExtractionValidationError('model response contained no tool_use block');
     }
-    return parseDuplicateJudgment(toolUse.input);
+    return {
+      judgment: parseDuplicateJudgment(toolUse.input),
+      usage: { input_tokens: response.usage.input_tokens, output_tokens: response.usage.output_tokens },
+    };
   }
 }

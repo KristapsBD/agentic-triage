@@ -99,6 +99,34 @@ describe('PipelineService idempotency', () => {
     expect(port.calls.filter((c) => c.op === 'find_candidates').length).toBe(1);
   });
 
+  it('captures token usage and per-stage timings for a simple issue_created path (#40)', async () => {
+    const raw = 'some report';
+    const port = new FakeTriagePort();
+    port.extractionQueue = [bugDecision()];
+    port.extractionUsageQueue = [{ input_tokens: 500, output_tokens: 80 }];
+
+    await new PipelineService(port).processReport(raw);
+
+    const record = await port.getDecisionRecord(hashReport(raw));
+    expect(record!.token_usage).toEqual([{ call: 'extract', candidate_issue_number: null, input_tokens: 500, output_tokens: 80 }]);
+    const stages = record!.stage_timings_ms.map((t) => t.stage);
+    expect(stages).toEqual(['extraction', 'gitea_list_open_issues', 'embedding_retrieval', 'gitea_create_issue']);
+    expect(record!.transient_retries_consumed).toBe(0);
+  });
+
+  it('accumulates transient retry counts across both extraction and duplicate-judgment calls (#40)', async () => {
+    const raw = 'flaky end to end';
+    const port = new FakeTriagePort();
+    port.extractionQueue = [new TransientAPIError('boom'), bugDecision()];
+    port.candidatesByReport.set(raw, [{ issue_number: 1, title: 'existing', body: '...', similarity: 0.8 }]);
+    port.judgeDuplicateQueueByCandidate.set(1, [new TransientAPIError('boom'), { same_bug: 'no', rationale: 'different' }]);
+
+    await new PipelineService(port).processReport(raw);
+
+    const record = await port.getDecisionRecord(hashReport(raw));
+    expect(record!.transient_retries_consumed).toBe(2);
+  });
+
   it('GiteaError surfaces as PipelineUnavailableError with error_code gitea_unavailable', async () => {
     const raw = 'boom on gitea';
     const port = new FakeTriagePort();

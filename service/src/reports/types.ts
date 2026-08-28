@@ -70,6 +70,38 @@ export interface PendingAction {
   target_issue: number | null;
 }
 
+export interface TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+}
+
+export interface LlmCallUsage extends TokenUsage {
+  call: 'extract' | 'duplicate_judgment';
+  candidate_issue_number: number | null;
+}
+
+export interface DuplicateCandidateConsidered {
+  issue_number: number;
+  similarity: number;
+  // null when the candidate's duplicate-judgment call exhausted its
+  // validation budget and was silently skipped rather than judged.
+  same_bug: SameBugJudgment | null;
+}
+
+export type PipelineStage =
+  | 'extraction'
+  | 'embedding_retrieval'
+  | 'duplicate_judgment'
+  | 'gitea_list_open_issues'
+  | 'gitea_create_issue'
+  | 'gitea_comment_issue';
+
+export interface StageTiming {
+  stage: PipelineStage;
+  duration_ms: number;
+  candidate_issue_number: number | null;
+}
+
 export interface DecisionRecord {
   report_hash: string;
   raw_report: string;
@@ -88,6 +120,13 @@ export interface DecisionRecord {
   validation_retries_consumed: number;
   validation_budget_exhausted: boolean;
   confidence: Confidence | null;
+  // Ticket #40: the full evidence trail behind the decision above -- never
+  // consulted by routing/confidence logic itself, purely for
+  // investigation/observability.
+  transient_retries_consumed: number;
+  duplicate_candidates_considered: DuplicateCandidateConsidered[];
+  token_usage: LlmCallUsage[];
+  stage_timings_ms: StageTiming[];
 }
 
 export interface ResponseEnvelope {
