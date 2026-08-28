@@ -1,6 +1,7 @@
 /** Ticket #28: clear bug report -> extraction -> new Gitea issue. */
 
 import { PipelineService } from './pipeline.service';
+import { ExtractionValidationError } from './pipeline.errors';
 import { FakeTriagePort } from './testing/fake-triage-port';
 import { TriageDecision } from './types';
 
@@ -88,5 +89,82 @@ describe('PipelineService (happy path)', () => {
     const extractCall = port.calls.find((c) => c.op === 'extract')!;
     expect(extractCall.args[0]).toBe(raw);
     expect(extractCall.args[1]).toBeNull();
+  });
+});
+
+describe('PipelineService (Ticket #38: Confidence)', () => {
+  it('reports high confidence for a clean extraction with no retries or ambiguity', async () => {
+    const raw = 'clean report, no ambiguity';
+    const port = new FakeTriagePort();
+    port.extractionQueue = [bugDecision()];
+    port.candidatesByReport.set(raw, []);
+
+    const envelope = await new PipelineService(port).processReport(raw);
+
+    expect(envelope.confidence).toBe('high');
+  });
+
+  it('persists confidence on the Decision Record so a repeated POST returns the same value without recomputation', async () => {
+    const raw = 'idempotent confidence check';
+    const port = new FakeTriagePort();
+    port.extractionQueue = [bugDecision()];
+    port.candidatesByReport.set(raw, []);
+
+    const first = await new PipelineService(port).processReport(raw);
+    const second = await new PipelineService(port).processReport(raw);
+
+    expect(second.confidence).toBe(first.confidence);
+    expect(port.calls.filter((c) => c.op === 'extract')).toHaveLength(1);
+  });
+
+  it('downgrades confidence once a validation retry was consumed during extraction', async () => {
+    const raw = 'needed a retry to extract';
+    const port = new FakeTriagePort();
+    const budgets = { validation_retry_budget: 2, transient_retry_budget: 3, transient_retry_backoff_seconds: 0 };
+    port.extractionQueue = [new ExtractionValidationError('bad'), bugDecision()];
+    port.candidatesByReport.set(raw, []);
+
+    const envelope = await new PipelineService(port, budgets).processReport(raw);
+
+    expect(envelope.confidence).toBe('medium');
+  });
+
+  it('floors confidence at low once the validation budget is exhausted on extraction', async () => {
+    const raw = 'malformed forever';
+    const port = new FakeTriagePort();
+    const budgets = { validation_retry_budget: 2, transient_retry_budget: 3, transient_retry_backoff_seconds: 0 };
+    port.extractionQueue = [new ExtractionValidationError('bad 1'), new ExtractionValidationError('bad 2'), new ExtractionValidationError('bad 3')];
+
+    const envelope = await new PipelineService(port, budgets).processReport(raw);
+
+    expect(envelope.outcome).toBe('review_flagged');
+    expect(envelope.confidence).toBe('low');
+    const body = port.calls.find((c) => c.op === 'create_issue')!.args[1] as string;
+    expect(body).toContain('**Confidence:** low');
+  });
+
+  it('caps confidence at medium for a possible duplicate even with a clean extraction', async () => {
+    const raw = 'looks kind of like an existing bug';
+    const port = new FakeTriagePort();
+    port.extractionQueue = [bugDecision()];
+    port.candidatesByReport.set(raw, [{ issue_number: 1, title: 'existing', body: '...', similarity: 0.6 }]);
+    port.judgmentsByCandidate.set(1, { same_bug: 'possibly', rationale: 'similar area' });
+
+    const envelope = await new PipelineService(port).processReport(raw);
+
+    expect(envelope.outcome).toBe('review_flagged');
+    expect(envelope.confidence).toBe('medium');
+  });
+
+  it('includes the Confidence band and reason on a Review Flagged Gitea issue body', async () => {
+    const raw = 'the export thing is timing out again';
+    const port = new FakeTriagePort();
+    port.extractionQueue = [bugDecision({ report_type: 'unclear', severity: null, components: [] })];
+    port.candidatesByReport.set(raw, []);
+
+    await new PipelineService(port).processReport(raw);
+
+    const body = port.calls.find((c) => c.op === 'create_issue')!.args[1] as string;
+    expect(body).toContain('**Confidence:**');
   });
 });

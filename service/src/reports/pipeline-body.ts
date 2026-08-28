@@ -5,6 +5,7 @@
  */
 
 import * as crypto from 'node:crypto';
+import { ConfidenceResult } from './confidence';
 import { redactSecrets } from './redaction';
 import { DuplicateVerdict, TriageDecision } from './types';
 
@@ -59,8 +60,9 @@ export function bugIssueBody(rawReport: string, decision: TriageDecision): strin
   return issueBody(rawReport, rationale);
 }
 
-export function reviewFlagBody(rawReport: string, reason: string, extra = ''): string {
-  return issueBody(rawReport, `**Why this needs review:** ${reason}`, extra);
+export function reviewFlagBody(rawReport: string, reason: string, confidence: ConfidenceResult, extra = ''): string {
+  const rationale = `**Why this needs review:** ${reason}\n\n**Confidence:** ${confidence.band} — ${confidence.reason}`;
+  return issueBody(rawReport, rationale, extra);
 }
 
 export function duplicateCommentBody(rawReport: string, rationale: string): string {

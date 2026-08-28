@@ -42,6 +42,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { GiteaError } from '../gitea/gitea.errors';
 import { SETTINGS } from '../config/settings';
 import { NEEDS_TRIAGE, FEATURE_REQUEST, NEEDS_INFO } from '../gitea/labels';
+import { computeConfidence, ConfidenceResult } from './confidence';
 import { findDuplicateVerdict } from './duplicate-verdict';
 import {
   bugIssueBody,
@@ -80,6 +81,7 @@ interface RoutingResult {
   action: PendingAction;
   outcome: Outcome;
   verdict: DuplicateVerdict | null;
+  confidence: ConfidenceResult;
 }
 
 const NO_ACTION: PendingAction = { type: 'none', title: null, body: null, labels: [], target_issue: null };
@@ -114,7 +116,16 @@ export class PipelineService {
         throw new PipelineUnavailableError(reportHash, 'llm_unavailable', outcome.lastError ?? '');
       }
       if (outcome.failure === 'validation_exhausted') {
-        const body = reviewFlagBody(rawReport, VALIDATION_FAILED_NOTE);
+        record.validation_retries_consumed = outcome.validationAttempts;
+        record.validation_budget_exhausted = true;
+        const confidence = computeConfidence({
+          validationRetriesConsumed: outcome.validationAttempts,
+          validationBudgetExhausted: true,
+          duplicateVerdictTier: null,
+          reviewFlagged: true,
+        });
+        record.confidence = confidence.band;
+        const body = reviewFlagBody(rawReport, VALIDATION_FAILED_NOTE, confidence);
         record.pending_action = {
           type: 'create_issue',
           title: 'Automated triage failed for incoming report',
@@ -128,16 +139,19 @@ export class PipelineService {
       }
 
       record.triage_decision = outcome.result as TriageDecision;
+      record.validation_retries_consumed = outcome.validationAttempts;
+      record.validation_budget_exhausted = false;
       await this.save(record);
     }
 
     const decision = record.triage_decision;
 
     if (record.pending_action === null) {
-      const { action, outcome, verdict } = await this.route(decision, rawReport);
+      const { action, outcome, verdict, confidence } = await this.route(decision, rawReport, record.validation_retries_consumed);
       record.pending_action = action;
       record.outcome = outcome;
       record.duplicate_verdict = verdict;
+      record.confidence = confidence.band;
       await this.save(record);
     }
 
@@ -150,22 +164,40 @@ export class PipelineService {
    * state; only touches the port for listOpenIssues/findCandidates/
    * judgeDuplicate (read-only LLM/embedding calls), never a Gitea write.
    */
-  private async route(decision: TriageDecision, rawReport: string): Promise<RoutingResult> {
+  private async route(decision: TriageDecision, rawReport: string, validationRetriesConsumed: number): Promise<RoutingResult> {
     if (decision.report_type === 'spam_or_off_topic') {
-      return { action: NO_ACTION, outcome: 'dropped_spam', verdict: null };
+      const confidence = computeConfidence({
+        validationRetriesConsumed,
+        validationBudgetExhausted: false,
+        duplicateVerdictTier: null,
+        reviewFlagged: false,
+      });
+      return { action: NO_ACTION, outcome: 'dropped_spam', verdict: null, confidence };
     }
 
     if (decision.report_type === 'feature_request') {
+      const confidence = computeConfidence({
+        validationRetriesConsumed,
+        validationBudgetExhausted: false,
+        duplicateVerdictTier: null,
+        reviewFlagged: false,
+      });
       const body = issueBody(rawReport, `**Report Type:** feature_request\n\n${decision.title}`);
       const action: PendingAction = { type: 'create_issue', title: decision.title, body, labels: [FEATURE_REQUEST], target_issue: null };
-      return { action, outcome: 'feature_request_filed', verdict: null };
+      return { action, outcome: 'feature_request_filed', verdict: null, confidence };
     }
 
     if (decision.report_type === 'unclear') {
       const verdict = await findDuplicateVerdict(this.port, rawReport, this.settings);
-      const body = reviewFlagBody(rawReport, UNCLEAR_REASON, duplicateCrossLinkNote(verdict));
+      const confidence = computeConfidence({
+        validationRetriesConsumed,
+        validationBudgetExhausted: false,
+        duplicateVerdictTier: verdict.tier,
+        reviewFlagged: true,
+      });
+      const body = reviewFlagBody(rawReport, UNCLEAR_REASON, confidence, duplicateCrossLinkNote(verdict));
       const action: PendingAction = { type: 'create_issue', title: decision.title, body, labels: [NEEDS_INFO], target_issue: null };
-      return { action, outcome: 'review_flagged', verdict };
+      return { action, outcome: 'review_flagged', verdict, confidence };
     }
 
     // report_type === 'bug' from here down.
@@ -174,35 +206,59 @@ export class PipelineService {
     }
 
     if (isBundled(decision)) {
-      return this.routeBundled(decision, rawReport);
+      return this.routeBundled(decision, rawReport, validationRetriesConsumed);
     }
 
     const verdict = await findDuplicateVerdict(this.port, rawReport, this.settings);
 
     if (verdict.tier === 'clear_duplicate') {
+      const confidence = computeConfidence({
+        validationRetriesConsumed,
+        validationBudgetExhausted: false,
+        duplicateVerdictTier: verdict.tier,
+        reviewFlagged: false,
+      });
       const body = duplicateCommentBody(rawReport, verdict.rationale);
       const action: PendingAction = { type: 'comment', title: null, body, labels: [], target_issue: verdict.target_issue };
-      return { action, outcome: 'duplicate_commented', verdict };
+      return { action, outcome: 'duplicate_commented', verdict, confidence };
     }
 
     if (verdict.tier === 'possible_duplicate') {
+      const confidence = computeConfidence({
+        validationRetriesConsumed,
+        validationBudgetExhausted: false,
+        duplicateVerdictTier: verdict.tier,
+        reviewFlagged: true,
+      });
       const reason =
         `Duplicate check found a possible match to #${verdict.target_issue} but didn't clear the ` +
         `auto-comment bar (${verdict.rationale}). Filed as a new issue, cross-linked, rather than ` +
         'risking a false merge.';
-      const body = reviewFlagBody(rawReport, reason, `### Possible duplicate\n\nSee #${verdict.target_issue}.`);
+      const body = reviewFlagBody(rawReport, reason, confidence, `### Possible duplicate\n\nSee #${verdict.target_issue}.`);
       const action: PendingAction = { type: 'create_issue', title: decision.title, body, labels: [NEEDS_TRIAGE], target_issue: null };
-      return { action, outcome: 'review_flagged', verdict };
+      return { action, outcome: 'review_flagged', verdict, confidence };
     }
 
+    const confidence = computeConfidence({
+      validationRetriesConsumed,
+      validationBudgetExhausted: false,
+      duplicateVerdictTier: verdict.tier,
+      reviewFlagged: false,
+    });
     const body = bugIssueBody(rawReport, decision);
     const labels = [decision.severity, ...decision.components];
     const action: PendingAction = { type: 'create_issue', title: decision.title, body, labels, target_issue: null };
-    return { action, outcome: 'issue_created', verdict };
+    return { action, outcome: 'issue_created', verdict, confidence };
   }
 
-  private async routeBundled(decision: TriageDecision, rawReport: string): Promise<RoutingResult> {
+  private async routeBundled(decision: TriageDecision, rawReport: string, validationRetriesConsumed: number): Promise<RoutingResult> {
     const verdict = await findDuplicateVerdict(this.port, rawReport, this.settings);
+    const confidence = computeConfidence({
+      validationRetriesConsumed,
+      validationBudgetExhausted: false,
+      duplicateVerdictTier: verdict.tier,
+      reviewFlagged: true,
+    });
     const listing = decision.distinct_issues.map((issue) => `- ${issue}`).join('\n');
     const reason =
       `Report describes what looks like ${decision.distinct_issues.length} distinct ` +
@@ -210,9 +266,9 @@ export class PipelineService {
     const extra = [`### Distinct issues identified\n\n${listing}`, duplicateCrossLinkNote(verdict)]
       .filter((part) => part.trim())
       .join('\n\n');
-    const body = reviewFlagBody(rawReport, reason, extra);
+    const body = reviewFlagBody(rawReport, reason, confidence, extra);
     const action: PendingAction = { type: 'create_issue', title: decision.title, body, labels: [NEEDS_TRIAGE], target_issue: null };
-    return { action, outcome: 'review_flagged', verdict };
+    return { action, outcome: 'review_flagged', verdict, confidence };
   }
 
   /**
@@ -267,18 +323,22 @@ export class PipelineService {
       error: null,
       created_at: now,
       updated_at: now,
+      validation_retries_consumed: 0,
+      validation_budget_exhausted: false,
+      confidence: null,
     };
   }
 
   private envelopeOf(record: DecisionRecord): ResponseEnvelope {
-    if (record.outcome === null) {
-      throw new Error('envelopeOf called before an outcome was decided');
+    if (record.outcome === null || record.confidence === null) {
+      throw new Error('envelopeOf called before an outcome/confidence was decided');
     }
     return {
       outcome: record.outcome,
       gitea_issue_number: record.gitea_issue_number,
       triage_decision: record.triage_decision,
       duplicate_verdict: record.duplicate_verdict,
+      confidence: record.confidence,
     };
   }
 

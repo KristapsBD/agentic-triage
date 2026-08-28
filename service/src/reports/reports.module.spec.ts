@@ -58,6 +58,9 @@ describe('ReportsModule wiring', () => {
       error: null,
       created_at: 0,
       updated_at: 0,
+      validation_retries_consumed: 0,
+      validation_budget_exhausted: false,
+      confidence: null,
     };
     await port.saveDecisionRecord(record);
     await expect(port.getDecisionRecord('h')).resolves.toEqual(record);

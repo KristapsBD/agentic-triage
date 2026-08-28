@@ -23,6 +23,7 @@ export type Outcome =
   | 'review_flagged'
   | 'feature_request_filed'
   | 'dropped_spam';
+export type Confidence = 'high' | 'medium' | 'low';
 
 export interface TriageDecision {
   title: string;
@@ -81,6 +82,12 @@ export interface DecisionRecord {
   error: string | null;
   created_at: number;
   updated_at: number;
+  // Ticket #38: captured at the same phase as triage_decision so it survives
+  // a resume even though route() (where duplicate tier/Review Flag presence
+  // become known) may run in a later call.
+  validation_retries_consumed: number;
+  validation_budget_exhausted: boolean;
+  confidence: Confidence | null;
 }
 
 export interface ResponseEnvelope {
@@ -88,4 +95,5 @@ export interface ResponseEnvelope {
   gitea_issue_number: number | null;
   triage_decision: TriageDecision | null;
   duplicate_verdict: DuplicateVerdict | null;
+  confidence: Confidence;
 }
