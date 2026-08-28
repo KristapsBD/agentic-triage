@@ -17,17 +17,33 @@
  * surfaces as PipelineUnavailableError (502, retry-safe); exhausting the
  * validation budget for extraction degrades to a needs-triage Gitea issue
  * rather than a crash or a silent drop — mirrors app/pipeline.py's
- * process_report() ahead of #32's fuller Review Flag unification and #33's
- * Decision Record persistence (not yet wired here).
+ * process_report().
+ *
+ * Ticket #32 scope adds: duplicate detection now also runs on the unclear
+ * path (previously bug-only), so a vague repeat of an existing issue still
+ * gets a cross-link instead of losing the signal. It also adds the one
+ * Report Type case not yet handled — a Bundled Report (more than one
+ * distinct issue in one Raw Report) is never auto-split; it's Review
+ * Flagged with the distinct issues listed in the body, same as every other
+ * low-confidence path (ADR-0006). #33's Decision Record persistence is not
+ * yet wired here.
  */
 
 import { Inject, Injectable } from '@nestjs/common';
 import { SETTINGS } from '../config/settings';
 import { NEEDS_TRIAGE, FEATURE_REQUEST, NEEDS_INFO } from '../gitea/labels';
 import { findDuplicateVerdict } from './duplicate-verdict';
-import { bugIssueBody, duplicateCommentBody, hashReport, issueBody, reviewFlagBody } from './pipeline-body';
+import {
+  bugIssueBody,
+  duplicateCommentBody,
+  duplicateCrossLinkNote,
+  hashReport,
+  issueBody,
+  reviewFlagBody,
+} from './pipeline-body';
 import { PipelineUnavailableError } from './pipeline.errors';
 import { RetryBudgets, withRetryBudgets } from './retry';
+import { isBundled } from './schemas';
 import { TRIAGE_PORT, TriagePort } from './triage-port.interface';
 import { DuplicateVerdict, ResponseEnvelope, TriageDecision } from './types';
 
@@ -102,19 +118,24 @@ export class PipelineService {
   }
 
   private async filedNeedsInfo(rawReport: string, decision: TriageDecision): Promise<ResponseEnvelope> {
-    const body = reviewFlagBody(rawReport, UNCLEAR_REASON);
+    const verdict = await findDuplicateVerdict(this.port, rawReport, this.settings);
+    const body = reviewFlagBody(rawReport, UNCLEAR_REASON, duplicateCrossLinkNote(verdict));
     const issueNumber = await this.port.createIssue(decision.title, body, [NEEDS_INFO]);
     return {
       outcome: 'review_flagged',
       gitea_issue_number: issueNumber,
       triage_decision: decision,
-      duplicate_verdict: null,
+      duplicate_verdict: verdict,
     };
   }
 
   private async filedAsBug(rawReport: string, decision: TriageDecision): Promise<ResponseEnvelope> {
     if (decision.severity === null) {
       throw new Error('bug reports always get a severity from the extraction schema');
+    }
+
+    if (isBundled(decision)) {
+      return this.filedAsBundled(rawReport, decision);
     }
 
     const verdict = await findDuplicateVerdict(this.port, rawReport, this.settings);
@@ -145,6 +166,25 @@ export class PipelineService {
     const issueNumber = await this.port.createIssue(decision.title, body, labels);
     return {
       outcome: 'issue_created',
+      gitea_issue_number: issueNumber,
+      triage_decision: decision,
+      duplicate_verdict: verdict,
+    };
+  }
+
+  private async filedAsBundled(rawReport: string, decision: TriageDecision): Promise<ResponseEnvelope> {
+    const verdict = await findDuplicateVerdict(this.port, rawReport, this.settings);
+    const listing = decision.distinct_issues.map((issue) => `- ${issue}`).join('\n');
+    const reason =
+      `Report describes what looks like ${decision.distinct_issues.length} distinct ` +
+      "issues, not auto-splitting — a human should decide how to split this.";
+    const extra = [`### Distinct issues identified\n\n${listing}`, duplicateCrossLinkNote(verdict)]
+      .filter((part) => part.trim())
+      .join('\n\n');
+    const body = reviewFlagBody(rawReport, reason, extra);
+    const issueNumber = await this.port.createIssue(decision.title, body, [NEEDS_TRIAGE]);
+    return {
+      outcome: 'review_flagged',
       gitea_issue_number: issueNumber,
       triage_decision: decision,
       duplicate_verdict: verdict,

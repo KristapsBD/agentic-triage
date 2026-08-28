@@ -6,7 +6,7 @@
 
 import * as crypto from 'node:crypto';
 import { redactSecrets } from './redaction';
-import { TriageDecision } from './types';
+import { DuplicateVerdict, TriageDecision } from './types';
 
 export function hashReport(rawReport: string): string {
   return crypto.createHash('sha256').update(rawReport, 'utf-8').digest('hex');
@@ -68,4 +68,14 @@ export function duplicateCommentBody(rawReport: string, rationale: string): stri
     `Automated triage matched this report as a duplicate of this issue (${rationale}).\n\n` +
     `### New report (verbatim)\n\n${quote(rawReport)}`
   );
+}
+
+/**
+ * Surfaced in the extra section of a Review Flag body for any low-confidence
+ * path (unclear, bundled) that also found a Duplicate Candidate worth
+ * mentioning. Mirrors app/pipeline.py's _duplicate_cross_link_note.
+ */
+export function duplicateCrossLinkNote(verdict: DuplicateVerdict): string {
+  if (verdict.tier === 'not_a_duplicate') return '';
+  return `### Possibly related to an existing issue\n\nSee #${verdict.target_issue} (${verdict.rationale}).`;
 }
