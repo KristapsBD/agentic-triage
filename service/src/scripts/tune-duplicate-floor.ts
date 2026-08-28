@@ -24,57 +24,12 @@ dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 import { EmbeddingIndex } from '../embeddings/embedding-index';
 import { loadSettings } from '../config/settings';
-import { GiteaIssue } from '../reports/types';
-
-const SET_A: GiteaIssue[] = [
-  {
-    number: 1,
-    title: 'Login button unresponsive on mobile Safari',
-    body:
-      'Multiple users report that on iOS Safari the "Log in" button does nothing ' +
-      'when tapped.\nWorks fine on desktop Chrome. Started after the 3.4 release.',
-    labels: ['frontend', 'auth', 'high'],
-    state: 'open',
-  },
-  {
-    number: 2,
-    title: 'CSV export times out for large datasets',
-    body: 'Exporting a report with more than ~50k rows spins for a while and then returns a 504.\nSmaller exports are fine.',
-    labels: ['backend', 'medium'],
-    state: 'open',
-  },
-  {
-    number: 3,
-    title: 'Password reset email never arrives',
-    body:
-      'Requesting a password reset shows a success message but no email is ever ' +
-      'delivered.\nChecked spam. Happens for at least three different users.',
-    labels: ['backend', 'auth', 'high'],
-    state: 'open',
-  },
-  {
-    number: 4,
-    title: 'Dashboard charts render blank on first load',
-    body: 'On first page load the dashboard charts are empty. A manual refresh fixes it.\nSeems like a race with the data fetch.',
-    labels: ['frontend', 'medium'],
-    state: 'open',
-  },
-];
+import { CLEAR_DUPLICATE_REPORT, NEAR_MISS_REPORTS, SET_A, UNRELATED_REPORT } from '../eval/fixtures';
 
 const REPORTS: Record<string, string> = {
-  B5_clear_duplicate_of_EXIST1:
-    "I can't log in on my iPhone. I open the app in Safari, type my details, tap the login " +
-    'button and literally nothing happens. My colleague has the same problem on her phone.',
-  B4_unrelated_footer_copyright:
-    'CRITICAL!!! URGENT!!! The footer copyright year still says 2024 instead of 2025. This is ' +
-    'extremely important and needs to be fixed immediately!!!',
-  NEARMISS_login_layout:
-    'On the login page, the password field visually overlaps the username field on narrow ' +
-    "screens, making it hard to tell which box you're typing into. Once you find the right " +
-    'field the login button itself works fine.',
-  NEARMISS_invoice_pdf:
-    'Generating a monthly invoice PDF spins forever and never downloads. Tried a small invoice ' +
-    'and a large one, same result. Works fine for weekly invoices.',
+  [CLEAR_DUPLICATE_REPORT.name]: CLEAR_DUPLICATE_REPORT.text,
+  [UNRELATED_REPORT.name]: UNRELATED_REPORT.text,
+  ...Object.fromEntries(NEAR_MISS_REPORTS.map((r) => [r.name, r.text])),
 };
 
 async function main(): Promise<void> {

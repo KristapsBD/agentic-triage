@@ -12,7 +12,11 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "seed:set-a": "ts-node src/scripts/seed-set-a.ts",
-    "tune:duplicate-floor": "ts-node src/scripts/tune-duplicate-floor.ts"
+    "tune:duplicate-floor": "ts-node src/scripts/tune-duplicate-floor.ts",
+    "verify:duplicate-thresholds": "ts-node src/eval/duplicate-threshold-regression.ts",
+    "eval:set-b": "ts-node src/eval/eval-set-b.ts",
+    "eval:set-c": "ts-node src/eval/eval-set-c.ts",
+    "eval": "npm run verify:duplicate-thresholds && npm run eval:set-b && npm run eval:set-c"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
