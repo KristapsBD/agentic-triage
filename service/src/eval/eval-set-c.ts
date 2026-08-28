@@ -121,10 +121,6 @@ function checkRationaleNotContains(needle: string): Check {
   };
 }
 
-function all(...checks: Check[]): Check {
-  return (body) => checks.flatMap((c) => c(body));
-}
-
 function checkNotClearDuplicateOfIssue(issueNumber: number): Check {
   return (body) => {
     const verdict = body.duplicate_verdict;
@@ -132,6 +128,10 @@ function checkNotClearDuplicateOfIssue(issueNumber: number): Check {
       ? [`duplicate tier falsely resolved clear_duplicate against issue #${issueNumber}, a materially different problem`]
       : [];
   };
+}
+
+function all(...checks: Check[]): Check {
+  return (body) => checks.flatMap((c) => c(body));
 }
 
 // Fixed Set A/B issue numbers on the standard seeded acme-app instance, per

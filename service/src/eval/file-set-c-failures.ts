@@ -62,6 +62,17 @@ async function alreadyFiled(caseId: string): Promise<boolean> {
  * is already open. Always `needs-triage`, never ADR-0006's `needs-info` --
  * that label is for "we need more from the reporter", and a Set C case has
  * no reporter to ask, only a pipeline behavior to investigate.
+ *
+ * Note this writes `rawReport`/`response` verbatim into a real Gitea issue
+ * body, unlike the service's own typed egress (ADR-0007, which governs the
+ * runtime path only). Several Set C cases (J1/J2) deliberately construct
+ * `rawReport` as a live prompt-injection payload -- if a duplicate-judgment
+ * call ever does leak injected text into `duplicate_verdict.rationale`
+ * (exactly what those cases assert against), a filed issue would carry that
+ * leak forward to whoever reads it next via `tea issues <n>`. Acceptable
+ * for now since this is dev tooling read by a human/agent already treating
+ * Set C findings as untrusted, but worth keeping in mind before this gets
+ * more automated consumers.
  */
 export async function fileSetCFailure(caseId: string, failures: string[], rawReport: string, response: unknown): Promise<void> {
   if (await alreadyFiled(caseId)) {
