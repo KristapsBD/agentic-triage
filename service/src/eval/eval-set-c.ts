@@ -31,6 +31,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 import { loadSettings } from '../config/settings';
 import { Component, DuplicateTier, Outcome, ReportType } from '../reports/types';
+import { fileSetCFailure } from './file-set-c-failures';
 
 const BASE_URL = process.env.TRIAGE_SERVICE_URL ?? 'http://localhost:8000';
 const SETTINGS = loadSettings();
@@ -395,6 +396,17 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Filing is best-effort dev tooling around the eval run, not the thing
+// under test -- a `tea` hiccup should never mask the FAIL that was already
+// printed above it.
+async function fileFailureSafely(caseId: string, failures: string[], rawReport: string, response: unknown): Promise<void> {
+  try {
+    await fileSetCFailure(caseId, failures, rawReport, response);
+  } catch (err) {
+    console.log(`    - could not file ${caseId} as a Gitea issue: ${(err as Error).message}`);
+  }
+}
+
 async function run(): Promise<number> {
   console.log(`${'CASE'.padEnd(45)} RESULT`);
   console.log('-'.repeat(80));
@@ -414,6 +426,7 @@ async function run(): Promise<number> {
       if (resp.status !== 200) {
         console.log(`${testCase.id.padEnd(45)} FAIL`);
         console.log(`    - HTTP ${resp.status}: ${JSON.stringify(body)}`);
+        await fileFailureSafely(testCase.id, [`HTTP ${resp.status}: ${JSON.stringify(body)}`], testCase.rawReport, body);
         continue;
       }
     } catch (err) {
@@ -441,6 +454,7 @@ async function run(): Promise<number> {
     } else {
       console.log(`${testCase.id.padEnd(45)} FAIL`);
       for (const f of failures) console.log(`    - ${f}`);
+      await fileFailureSafely(testCase.id, failures, testCase.rawReport, body);
     }
 
     console.log(
