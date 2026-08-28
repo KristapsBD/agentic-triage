@@ -3,6 +3,3 @@
 node_modules/
 dist/
 coverage/
-__pycache__/
-*.pyc
-.venv/
