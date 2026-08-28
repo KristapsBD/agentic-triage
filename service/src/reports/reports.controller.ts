@@ -1,17 +1,17 @@
 /**
- * POST /reports — ticket #28 scope only: a clear bug report in, a Gitea
- * issue out. The full response envelope/error contract (empty-input 400,
- * pipeline-failure 502, one envelope shape for every outcome) is ticket #34;
- * this just proves the extraction -> Gitea-write path end to end.
+ * POST /reports. Ticket #28 proved the extraction -> Gitea-write path;
+ * ticket #34 adds the full response contract: ReportRequestPipe rejects
+ * truly empty/whitespace-only input with 400 before the pipeline runs (the
+ * only pre-pipeline rejection), and PipelineExceptionFilter (registered
+ * globally in app.module.ts) maps a thrown PipelineUnavailableError to 502
+ * — every other input, however short/vague/hostile, flows through the
+ * pipeline and settles into one of the 2xx envelope outcomes.
  */
 
 import { Body, Controller, HttpCode, Post } from '@nestjs/common';
 import { PipelineService } from './pipeline.service';
+import { ReportRequestBody, ReportRequestPipe } from './report-request.pipe';
 import { ResponseEnvelope } from './types';
-
-interface ReportRequestBody {
-  raw_report: string;
-}
 
 @Controller('reports')
 export class ReportsController {
@@ -19,7 +19,7 @@ export class ReportsController {
 
   @Post()
   @HttpCode(200)
-  async create(@Body() body: ReportRequestBody): Promise<ResponseEnvelope> {
+  async create(@Body(ReportRequestPipe) body: ReportRequestBody): Promise<ResponseEnvelope> {
     return this.pipeline.processReport(body.raw_report);
   }
 }
