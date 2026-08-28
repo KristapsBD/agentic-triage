@@ -45,6 +45,8 @@ interface ResponseBody {
   } | null;
   duplicate_verdict?: {
     tier?: DuplicateTier;
+    target_issue?: number | null;
+    rationale?: string;
   } | null;
 }
 
@@ -106,6 +108,15 @@ function checkDuplicateTierNot(excludedTier: DuplicateTier): Check {
   return (body) => {
     const actual = body.duplicate_verdict?.tier;
     return actual === excludedTier ? [`duplicate tier=${JSON.stringify(actual)} should not be ${JSON.stringify(excludedTier)}`] : [];
+  };
+}
+
+function checkRationaleNotContains(needle: string): Check {
+  return (body) => {
+    const rationale = body.duplicate_verdict?.rationale ?? '';
+    return rationale.includes(needle)
+      ? [`duplicate_verdict.rationale still contained ${JSON.stringify(needle)} verbatim -- expected it not to`]
+      : [];
   };
 }
 
