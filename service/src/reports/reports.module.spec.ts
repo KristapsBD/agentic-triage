@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { ConfigModule } from '../config/config.module';
 import { GiteaModule } from '../gitea/gitea.module';
+import { LlmModule } from '../llm/llm.module';
 import { PipelineService } from './pipeline.service';
 import { ReportsModule } from './reports.module';
 import { TRIAGE_PORT, TriagePort } from './triage-port.interface';
@@ -19,15 +20,15 @@ describe('ReportsModule wiring', () => {
 
   it('resolves PipelineService through Nest DI, depending only on TriagePort', async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule, GiteaModule, ReportsModule],
+      imports: [ConfigModule, GiteaModule, LlmModule, ReportsModule],
     }).compile();
 
     expect(moduleRef.get(PipelineService)).toBeInstanceOf(PipelineService);
   });
 
-  it('binds every TriagePort method, with Gitea ones delegating and the rest stubbed', async () => {
+  it('binds every TriagePort method, with Gitea/LLM ones delegating and the rest stubbed', async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule, GiteaModule, ReportsModule],
+      imports: [ConfigModule, GiteaModule, LlmModule, ReportsModule],
     }).compile();
 
     const port = moduleRef.get<TriagePort>(TRIAGE_PORT);
@@ -35,7 +36,7 @@ describe('ReportsModule wiring', () => {
     expect(typeof port.createIssue).toBe('function');
     expect(typeof port.commentIssue).toBe('function');
     expect(typeof port.listOpenIssues).toBe('function');
-    await expect(port.extract('report text')).rejects.toThrow(/not implemented/);
+    expect(typeof port.extract).toBe('function');
     await expect(port.findCandidates('report text', [])).rejects.toThrow(/not implemented/);
     await expect(
       port.judgeDuplicate('report text', { issue_number: 1, title: 't', body: 'b', similarity: 0.5 }),
