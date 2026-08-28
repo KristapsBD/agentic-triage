@@ -2,13 +2,15 @@
   "name": "bug-triage-service",
   "version": "0.1.0",
   "private": true,
-  "description": "Bug Report Triage Service (NestJS/TypeScript rebuild — issue #26)",
+  "description": "Bug Report Triage Service (NestJS/TypeScript)",
   "scripts": {
     "build": "nest build",
     "start": "nest start",
     "start:dev": "ts-node-dev --respawn --exit-child --transpile-only src/main.ts",
     "start:prod": "node dist/main.js",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint \"src/**/*.ts\"",
+    "lint:fix": "eslint \"src/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
     "seed:set-a": "ts-node src/scripts/seed-set-a.ts",
@@ -16,7 +18,8 @@
     "verify:duplicate-thresholds": "ts-node src/eval/duplicate-threshold-regression.ts",
     "eval:set-b": "ts-node src/eval/eval-set-b.ts",
     "eval:set-c": "ts-node src/eval/eval-set-c.ts",
-    "eval": "npm run verify:duplicate-thresholds && npm run eval:set-b && npm run eval:set-c"
+    "eval": "npm run verify:duplicate-thresholds && npm run eval:set-b && npm run eval:set-c",
+    "preflight": "npm run typecheck && npm run lint && npm test && npm run eval"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
@@ -32,16 +35,19 @@
     "zod": "^4.5.1"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@nestjs/cli": "^11.0.24",
     "@nestjs/testing": "^11.2.3",
     "@types/better-sqlite3": "^9.6.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.13.3",
+    "eslint": "^10.9.1",
     "jest": "^30.4.2",
     "ts-jest": "^29.4.12",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.68.0"
   },
   "jest": {
     "moduleFileExtensions": [

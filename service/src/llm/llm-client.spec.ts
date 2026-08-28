@@ -19,7 +19,6 @@ const settings = {
 };
 
 function withMockedCreate(client: LlmClient, impl: (...args: unknown[]) => unknown) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (client as any).client.messages.create = jest.fn(impl);
 }
 

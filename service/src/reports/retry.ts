@@ -39,7 +39,7 @@ export async function withRetryBudgets<T>(
   let feedback: string | null = null;
   let validationAttempts = 0;
   let transientAttempts = 0;
-  let lastError: string | null = null;
+  let lastError: string | null;
 
   for (;;) {
     try {
