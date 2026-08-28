@@ -12,6 +12,7 @@ describe('ReportsModule wiring', () => {
   beforeAll(() => {
     process.env.GITEA_REPO_OWNER = 'triageadmin';
     process.env.GITEA_REPO_NAME = 'acme-app';
+    process.env.DECISION_DB_PATH = ':memory:';
   });
 
   afterAll(() => {
@@ -26,7 +27,7 @@ describe('ReportsModule wiring', () => {
     expect(moduleRef.get(PipelineService)).toBeInstanceOf(PipelineService);
   });
 
-  it('binds every TriagePort method, with Gitea/LLM/embedding ones delegating and Decision Record methods stubbed', async () => {
+  it('binds every TriagePort method, with Gitea/LLM/embedding/Decision Record ones all delegating to real providers', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [ConfigModule, GiteaModule, LlmModule, ReportsModule],
     }).compile();
@@ -42,21 +43,23 @@ describe('ReportsModule wiring', () => {
     // so this just confirms they're wired, not stubbed placeholders.
     expect(typeof port.findCandidates).toBe('function');
     expect(typeof port.judgeDuplicate).toBe('function');
-    await expect(
-      port.saveDecisionRecord({
-        report_hash: 'h',
-        raw_report: 'r',
-        status: 'pending',
-        triage_decision: null,
-        duplicate_verdict: null,
-        pending_action: null,
-        outcome: null,
-        gitea_issue_number: null,
-        error: null,
-        created_at: 0,
-        updated_at: 0,
-      }),
-    ).rejects.toThrow(/not implemented/);
-    await expect(port.getDecisionRecord('h')).rejects.toThrow(/not implemented/);
+
+    // Decision Record methods delegate to a real DecisionStore (#33) -- a
+    // round trip through the wired port proves it, rather than a stub throw.
+    const record = {
+      report_hash: 'h',
+      raw_report: 'r',
+      status: 'pending' as const,
+      triage_decision: null,
+      duplicate_verdict: null,
+      pending_action: null,
+      outcome: null,
+      gitea_issue_number: null,
+      error: null,
+      created_at: 0,
+      updated_at: 0,
+    };
+    await port.saveDecisionRecord(record);
+    await expect(port.getDecisionRecord('h')).resolves.toEqual(record);
   });
 });

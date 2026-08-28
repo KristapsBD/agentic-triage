@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { DecisionsModule } from '../decisions/decisions.module';
 import { EmbeddingsModule } from '../embeddings/embeddings.module';
 import { GiteaModule } from '../gitea/gitea.module';
 import { LlmModule } from '../llm/llm.module';
@@ -7,7 +8,7 @@ import { ReportsController } from './reports.controller';
 import { triagePortProvider } from './triage-port.provider';
 
 @Module({
-  imports: [GiteaModule, LlmModule, EmbeddingsModule],
+  imports: [GiteaModule, LlmModule, EmbeddingsModule, DecisionsModule],
   controllers: [ReportsController],
   providers: [PipelineService, triagePortProvider],
   exports: [PipelineService],
