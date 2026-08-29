@@ -1,0 +1,12 @@
+# Scrapes triage-service's GET /metrics (MetricsController, service/src/telemetry/).
+# No auth on that endpoint, matching the existing /reports posture (ticket #42).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: triage-service
+    static_configs:
+      - targets: ["triage-service:8000"]
+        labels:
+          service: triage-service

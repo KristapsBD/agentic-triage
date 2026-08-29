@@ -1,0 +1,14 @@
+# Provisioned dashboard provider (ticket #42) — loads
+# ../../dashboards/*.json on startup, no manual dashboard import.
+apiVersion: 1
+
+providers:
+  - name: triage-service
+    orgId: 1
+    folder: Triage Service
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/json

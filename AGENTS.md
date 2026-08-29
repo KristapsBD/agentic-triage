@@ -20,6 +20,10 @@ Running more than one agent against this repo at once — concurrent sessions or
 
 `TelemetryRecorder` (`service/src/telemetry/telemetry-recorder.interface.ts`) is the counters/histograms/structured-logs seam, injected into `PipelineService` the same way `TriagePort` is. Real implementation (`PrometheusTelemetryRecorder`, prom-client-backed) is exposed at `GET /metrics` via `MetricsController`, mirroring `HealthController`. Tests use `FakeTelemetryRecorder`/`NoopTelemetryRecorder` (never the real one) to keep the suite network-call-free — see `service/src/telemetry/testing/fake-telemetry-recorder.ts`.
 
+### Observability stack (Prometheus/Grafana/Loki)
+
+`docker-compose.yml` runs prometheus, loki, promtail, and grafana alongside gitea/triage-service. Config lives under `observability/` (prometheus scrape config, loki config, promtail pipeline that ships triage-service's structured JSON logs with `report_hash`/`stage` as Loki structured metadata, and Grafana's provisioned datasources + dashboard JSON — no manual Grafana setup). Grafana is at `http://localhost:3001` (anonymous Viewer access enabled). Validate compose changes here with `docker compose config`/`docker compose build`, not a bare `docker compose up`, if another stack instance may already be running with the same fixed container names/ports.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.

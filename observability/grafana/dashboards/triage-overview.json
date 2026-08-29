@@ -1,0 +1,178 @@
+{
+  "title": "Triage Service Overview",
+  "uid": "triage-service-overview",
+  "editable": true,
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Service Health (Prometheus scrape up)",
+      "description": "1 = triage-service's /metrics endpoint was reachable on the last scrape, 0 = it was not.",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "up{job=\"triage-service\"}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "value" }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Duplicate-Judgment Silent Skips (total)",
+      "description": "Cumulative count of duplicate-judgment calls dropped after exhausting their validation retry budget (the previously-silent skip path, #41).",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "triage_duplicate_judgment_silent_skip_total"
+        }
+      ],
+      "options": { "colorMode": "value", "graphMode": "area", "textMode": "value" }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Report Throughput (5m rate)",
+      "description": "Reports processed per second, summed across all outcomes.",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(triage_outcomes_total[5m]))"
+        }
+      ],
+      "options": { "colorMode": "value", "graphMode": "area", "textMode": "value" }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Per-Stage Latency (p50 / p95, ms)",
+      "description": "histogram_quantile over triage_stage_duration_ms, broken out per pipeline stage (extraction, per-candidate duplicate-judgment, embedding re-embed, Gitea calls).",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "links": [
+        {
+          "title": "View correlated logs in Loki (same time range)",
+          "url": "/explore?left=%7B%22datasource%22:%22loki%22,%22queries%22:%5B%7B%22refId%22:%22A%22,%22datasource%22:%7B%22type%22:%22loki%22,%22uid%22:%22loki%22%7D,%22expr%22:%22%7Bjob%3D%5C%22triage-service%5C%22%7D%22%7D%5D,%22range%22:%7B%22from%22:%22${__from}%22,%22to%22:%22${__to}%22%7D%7D",
+          "targetBlank": true
+        }
+      ],
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "p50 {{stage}}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.50, sum(rate(triage_stage_duration_ms_bucket[5m])) by (le, stage))"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "p95 {{stage}}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum(rate(triage_stage_duration_ms_bucket[5m])) by (le, stage))"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Token Usage (tokens/sec, by call + direction)",
+      "description": "rate(triage_token_usage_total) — input vs output tokens per LLM call type (extraction, duplicate_judgment).",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{call}} {{token_type}}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(triage_token_usage_total[5m])) by (call, token_type)"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Estimated LLM Cost ($/min)",
+      "description": "Placeholder cost model: tokens/sec * $3 per 1M tokens * 60. Same conservative-default-that's-tunable spirit as tune-duplicate-floor.ts — update TOKEN_COST_PER_MILLION to your actual model pricing.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{token_type}}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(triage_token_usage_total[5m])) by (token_type) * 3 / 1000000 * 60"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Outcome Distribution (per sec)",
+      "description": "rate(triage_outcomes_total) by outcome — triage volume-mix trend (e.g. a spike in review_flagged).",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{outcome}}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(triage_outcomes_total[5m])) by (outcome)"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Duplicate Verdict Tier Distribution (per sec)",
+      "description": "rate(triage_duplicate_verdict_total) by tier (duplicate / possible_duplicate / not_duplicate).",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{tier}}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(triage_duplicate_verdict_total[5m])) by (tier)"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "logs",
+      "title": "Correlated Logs (Loki, by report_hash)",
+      "description": "Structured JSON stage logs from triage-service. Filter with e.g. {job=\"triage-service\"} | json | report_hash=`<hash>` to follow one report end to end.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 31 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{job=\"triage-service\"}"
+        }
+      ]
+    }
+  ]
+}
