@@ -82,13 +82,30 @@ docker volume rm agentic-sdw_triage-decisions
 docker compose up -d --build triage-service
 ```
 
+The Prometheus/Grafana/Loki volumes need the same treatment, for the same
+reason: Prometheus's `up{job="gitea"}` history, Grafana's dashboard state,
+and Loki's ingested logs all reference the pre-reset world (old
+`report_hash`es, old container uptimes), so a demo reset that skips this
+leaves stale dashboard data sitting next to the freshly reseeded Set A:
+
+```
+docker compose down prometheus grafana loki
+docker volume rm agentic-sdw_prometheus-data agentic-sdw_grafana-data agentic-sdw_loki-data
+docker compose up -d --build prometheus grafana loki
+```
+
+Grafana's dashboard and alert rules are re-provisioned automatically on that
+`up` (`observability/grafana/provisioning/`, see
+[ADR-0009](../docs/adr/0009-dashboard-only-alerting-six-conditions.md)) — no
+manual re-setup in the Grafana UI.
+
 This gives you byte-for-byte the same starting state every time: a fresh
 `acme-app`, Set A re-seeded from the checked-in script, no stale decision
-records — without touching `bug-triage` or this codebase's git history at
-all. Running this today vs. next week vs. on a different machine is the
-same sequence either way, as long as `ANTHROPIC_API_KEY` is set in `.env`
-first (copy `.env.example` if `.env` doesn't exist — `bootstrap.sh` does
-this for you).
+records, and clean dashboards/metrics/logs — without touching `bug-triage`
+or this codebase's git history at all. Running this today vs. next week vs.
+on a different machine is the same sequence either way, as long as
+`ANTHROPIC_API_KEY` is set in `.env` first (copy `.env.example` if `.env`
+doesn't exist — `bootstrap.sh` does this for you).
 
 One caveat: LLM output isn't literally deterministic between runs
 (wording, exact title text will vary), which is exactly why `eval-set-b.ts`
