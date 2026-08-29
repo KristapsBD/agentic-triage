@@ -25,6 +25,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 import { loadSettings } from '../config/settings';
 import { DuplicateTier, Outcome, ReportType } from '../reports/types';
+import { fileSetDFailure } from './file-set-d-failures';
 import { GiteaIssueSummary, resolveGiteaIssueByTitle } from './gitea-issue-resolution';
 
 const BASE_URL = process.env.TRIAGE_SERVICE_URL ?? 'http://localhost:8000';
@@ -102,43 +103,58 @@ const CASES: Case[] = [
   },
 ];
 
+// Filing is best-effort dev tooling around the eval run, not the thing
+// under test -- a `tea` hiccup should never mask the FAIL that was already
+// printed above it. Mirrors eval-set-c.ts's fileFailureSafely. Must be
+// called only after the FAIL line for this case has already been printed.
+async function fileFailureSafely(caseId: string, failures: string[], rawReport: string, response: unknown): Promise<void> {
+  try {
+    await fileSetDFailure(caseId, failures, rawReport, response);
+  } catch (err) {
+    console.log(`    - could not file ${caseId} as a Gitea issue: ${(err as Error).message}`);
+  }
+}
+
 async function run(): Promise<number> {
-  const results: { id: string; failures: string[] }[] = [];
+  console.log(`${'CASE'.padEnd(40)} RESULT`);
+  console.log('-'.repeat(70));
+  let passed = 0;
 
   for (const testCase of CASES) {
+    const id = testCase.id;
+    let failures: string[];
+    const rawReport = testCase.rawReport;
+    let body: ResponseBody = {};
+
     try {
       const resp = await fetch(`${BASE_URL}/reports`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ raw_report: testCase.rawReport }),
       });
-      const body = (await resp.json()) as ResponseBody;
+      body = (await resp.json()) as ResponseBody;
       if (resp.status !== 200) {
-        results.push({ id: testCase.id, failures: [`HTTP ${resp.status}: ${JSON.stringify(body)}`] });
-        continue;
+        failures = [`HTTP ${resp.status}: ${JSON.stringify(body)}`];
+      } else {
+        failures = await testCase.check(body);
       }
-      const failures = await testCase.check(body);
-      results.push({ id: testCase.id, failures });
     } catch (err) {
-      results.push({ id: testCase.id, failures: [`request failed: ${(err as Error).message}`] });
+      failures = [`request failed: ${(err as Error).message}`];
     }
-  }
 
-  console.log(`${'CASE'.padEnd(40)} RESULT`);
-  console.log('-'.repeat(70));
-  let passed = 0;
-  for (const { id, failures } of results) {
     if (failures.length === 0) {
       console.log(`${id.padEnd(40)} PASS`);
       passed += 1;
     } else {
       console.log(`${id.padEnd(40)} FAIL`);
       for (const f of failures) console.log(`    - ${f}`);
+      await fileFailureSafely(id, failures, rawReport, body);
     }
   }
+
   console.log('-'.repeat(70));
-  console.log(`${passed}/${results.length} passed`);
-  return passed === results.length ? 0 : 1;
+  console.log(`${passed}/${CASES.length} passed`);
+  return passed === CASES.length ? 0 : 1;
 }
 
 run().then((code) => process.exit(code));
