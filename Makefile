@@ -1,8 +1,13 @@
 .DEFAULT_GOAL := help
 .PHONY: help bootstrap up down stop restart build logs logs-service logs-gitea ps \
-	sh sh-gitea shell gitea-cli seed eval reset-demo fresh-start \
+	sh sh-gitea gitea-cli seed eval reset-demo fresh-start \
 	test test-watch typecheck lint preflight check status clean-volumes \
-	git-status add git-log git-sync tea-login
+	add
+
+# ---- Help -----------------------------------------------------------------
+
+help: ## Show this help
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
 # ---- Docker lifecycle -------------------------------------------------
 
@@ -27,13 +32,27 @@ build: ## Rebuild the triage-service image (needed after package.json changes)
 ps: ## Show status of this project's containers
 	docker compose ps
 
+status: ## Show container status and service health (GET /health)
+	docker compose ps
+	@echo
+	@curl -s http://localhost:8000/health | jq . || true
+
 logs: ## Tail logs from all containers
 	docker compose logs -f
+
+logs-service: ## Tail logs from the triage-service container
+	docker compose logs -f triage-service
+
+logs-gitea: ## Tail logs from the gitea container
+	docker compose logs -f gitea
 
 # ---- Connecting to containers ------------------------------------------
 
 sh: ## Shell into the running triage-service container
 	docker compose exec triage-service sh
+
+sh-gitea: ## Shell into the running gitea container
+	docker compose exec -u git gitea sh
 
 gitea-cli: ## Run a `gitea` admin subcommand, e.g. `make gitea-cli ARGS="admin user list"`
 	docker compose exec -u git gitea gitea $(ARGS)
@@ -50,6 +69,25 @@ reset-demo: ## Reset just the demo target's Decision Record store (delete acme-a
 	docker compose down triage-service
 	docker volume rm agentic-sdw_triage-decisions
 	docker compose up -d --build triage-service
+
+fresh-start: ## Full demo reset to a clean slate (see service/README.md "Fresh start" — delete acme-app in Gitea's UI first)
+	@printf '%s\n' \
+		"Fresh start requires one manual step first (deliberately not scripted, see service/README.md):" \
+		"  Delete the acme-app repo in Gitea's UI:" \
+		"  http://localhost:3000/triageadmin/acme-app/settings -> Danger Zone -> Delete This Repository" \
+		"Press Enter once that's done, or Ctrl-C to abort."
+	@read _ignore
+	./bootstrap.sh
+	docker compose run --rm triage-service npm run seed:set-a
+	docker compose down triage-service
+	docker volume rm agentic-sdw_triage-decisions
+	docker compose up -d --build triage-service
+	docker compose down prometheus grafana loki
+	docker volume rm agentic-sdw_prometheus-data agentic-sdw_grafana-data agentic-sdw_loki-data
+	docker compose up -d --build prometheus grafana loki
+
+clean-volumes: ## Remove ALL containers and volumes, including Gitea's own data (bug-triage repo included) — full reset from zero, see service/README.md "Fresh start"
+	docker compose down -v
 
 # ---- Tests / linters ------------------------------------------------------
 
