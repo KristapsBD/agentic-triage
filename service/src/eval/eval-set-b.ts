@@ -24,6 +24,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 import { loadSettings } from '../config/settings';
 import { Component, Confidence, DuplicateTier, Outcome, ReportType, Severity } from '../reports/types';
+import { GiteaIssueSummary, resolveGiteaIssueByTitle } from './gitea-issue-resolution';
 
 const BASE_URL = process.env.TRIAGE_SERVICE_URL ?? 'http://localhost:8000';
 const SETTINGS = loadSettings();
@@ -57,17 +58,8 @@ async function findGiteaIssueNumber(titleSubstring: string): Promise<number | nu
     headers: { Authorization: `token ${SETTINGS.gitea_token}` },
   });
   if (!resp.ok) throw new Error(`Gitea returned ${resp.status}`);
-  const issues = (await resp.json()) as { number: number; title: string }[];
-  // Prefer the most specific (shortest) matching title, not array order --
-  // Gitea's list order isn't title order, and a later Set C bundled-report
-  // title can otherwise contain this same substring alongside unrelated
-  // text and get matched first (found via a live run: B5's "Login button
-  // unresponsive" substring also matched a bundled report's longer title
-  // once Set C had run).
-  const matches = issues.filter((issue) => issue.title.toLowerCase().includes(titleSubstring.toLowerCase()));
-  if (matches.length === 0) return null;
-  matches.sort((a, b) => a.title.length - b.title.length);
-  return matches[0].number;
+  const issues = (await resp.json()) as GiteaIssueSummary[];
+  return resolveGiteaIssueByTitle(issues, titleSubstring);
 }
 
 function checkReportType(expected: ReportType): Check {
@@ -203,7 +195,7 @@ const CASES: Case[] = [
       "I can't log in on my iPhone. I open the app in Safari, type my details, tap the " +
       'login button and literally nothing happens. My colleague has the same problem on ' +
       'her phone.',
-    check: all(checkDuplicateTier('clear_duplicate', 'Login button unresponsive'), checkConfidenceNot('low')),
+    check: all(checkDuplicateTier('clear_duplicate', 'Login button unresponsive on mobile Safari'), checkConfidenceNot('low')),
   },
   {
     id: 'B6_feature_request',

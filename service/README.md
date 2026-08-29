@@ -252,7 +252,7 @@ or inside the already-built image:
 docker compose run --rm triage-service npm test
 ```
 
-77 tests across 17 suites, covering the orchestration logic against
+113 tests across 23 suites, covering the orchestration logic against
 `FakeTriagePort` — happy path, report-type routing, duplicate detection
 (incl. the false-merge near-miss), retry budgets, unified Review Flags +
 bundling, idempotency, the HTTP response contract, and the Zod schema's

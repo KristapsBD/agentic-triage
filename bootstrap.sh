@@ -112,4 +112,4 @@ if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
 fi
 echo
 echo "Next: docker compose up -d --build triage-service"
-echo "Then: docker compose run --rm triage-service python -m scripts.seed_set_a"
+echo "Then: docker compose run --rm triage-service npm run seed:set-a"
