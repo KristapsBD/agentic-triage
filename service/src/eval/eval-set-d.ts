@@ -124,15 +124,15 @@ async function run(): Promise<number> {
     }
   }
 
-  console.log(`${'CASE'.padEnd(45)} RESULT`);
+  console.log(`${'CASE'.padEnd(40)} RESULT`);
   console.log('-'.repeat(70));
   let passed = 0;
   for (const { id, failures } of results) {
     if (failures.length === 0) {
-      console.log(`${id.padEnd(45)} PASS`);
+      console.log(`${id.padEnd(40)} PASS`);
       passed += 1;
     } else {
-      console.log(`${id.padEnd(45)} FAIL`);
+      console.log(`${id.padEnd(40)} FAIL`);
       for (const f of failures) console.log(`    - ${f}`);
     }
   }

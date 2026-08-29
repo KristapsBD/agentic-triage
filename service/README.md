@@ -280,6 +280,12 @@ service's address on the compose network, not `localhost`. `npm run eval`
 also runs the duplicate-similarity threshold regression check and Set C —
 see `npm run eval:set-b` / `eval:set-c` to run either alone.)
 
+`npm run eval:set-d` / `make eval-set-d` is a separate two-case anchor
+suite that only needs Set A seeded — no Set B/C run required first — so it
+works right after `make fresh-start && make seed` alone. It's deliberately
+excluded from `npm run eval` / `make eval` / `npm run preflight`: a Set D
+result should never be mistaken for a broken build or block routine work.
+
 ### Local preflight
 
 `npm run preflight` (typecheck + lint + unit tests + the eval harness, in
