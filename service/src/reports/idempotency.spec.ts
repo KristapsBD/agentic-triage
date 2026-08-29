@@ -4,7 +4,7 @@ import { hashReport } from './pipeline-body';
 import { PipelineService } from './pipeline.service';
 import { PipelineUnavailableError } from './pipeline.errors';
 import { FakeTriagePort } from './testing/fake-triage-port';
-import { TransientAPIError } from './pipeline.errors';
+import { ExtractionValidationError, TransientAPIError } from './pipeline.errors';
 import { TriageDecision } from './types';
 
 function bugDecision(overrides: Partial<TriageDecision> = {}): TriageDecision {
@@ -110,8 +110,41 @@ describe('PipelineService idempotency', () => {
     const record = await port.getDecisionRecord(hashReport(raw));
     expect(record!.token_usage).toEqual([{ call: 'extract', candidate_issue_number: null, input_tokens: 500, output_tokens: 80 }]);
     const stages = record!.stage_timings_ms.map((t) => t.stage);
-    expect(stages).toEqual(['extraction', 'gitea_list_open_issues', 'embedding_retrieval', 'gitea_create_issue']);
+    expect(stages).toEqual(['extraction', 'gitea_list_open_issues', 'embedding_retrieval', 'gitea_create_issue', 'end_to_end']);
     expect(record!.transient_retries_consumed).toBe(0);
+  });
+
+  it('records exactly one end_to_end stage timing per freshly processed report, not on a cached repeat (#43)', async () => {
+    const raw = 'some report';
+    const port = new FakeTriagePort();
+    port.extractionQueue = [bugDecision()];
+
+    await new PipelineService(port).processReport(raw);
+    const record = await port.getDecisionRecord(hashReport(raw));
+    const endToEndTimings = record!.stage_timings_ms.filter((t) => t.stage === 'end_to_end');
+    expect(endToEndTimings.length).toBe(1);
+    expect(endToEndTimings[0].duration_ms).toBeGreaterThanOrEqual(0);
+
+    await new PipelineService(port).processReport(raw);
+    const recordAfterRepeat = await port.getDecisionRecord(hashReport(raw));
+    expect(recordAfterRepeat!.stage_timings_ms.filter((t) => t.stage === 'end_to_end').length).toBe(1);
+  });
+
+  it('records end_to_end for the review-flagged validation-exhausted path too (#43)', async () => {
+    const raw = 'bad report';
+    const port = new FakeTriagePort();
+    port.extractionQueue = [
+      new ExtractionValidationError('bad 1'),
+      new ExtractionValidationError('bad 2'),
+      new ExtractionValidationError('bad 3'),
+    ];
+
+    await new PipelineService(port).processReport(raw);
+
+    const record = await port.getDecisionRecord(hashReport(raw));
+    expect(record!.outcome).toBe('review_flagged');
+    const endToEndTimings = record!.stage_timings_ms.filter((t) => t.stage === 'end_to_end');
+    expect(endToEndTimings.length).toBe(1);
   });
 
   it('accumulates transient retry counts across both extraction and duplicate-judgment calls (#40)', async () => {

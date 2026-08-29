@@ -113,6 +113,7 @@ export class PipelineService {
 
   async processReport(rawReport: string): Promise<ResponseEnvelope> {
     const reportHash = hashReport(rawReport);
+    const requestStart = Date.now();
     let record = await this.port.getDecisionRecord(reportHash);
 
     if (record !== null && record.status === 'completed') {
@@ -164,7 +165,7 @@ export class PipelineService {
         record.outcome = 'review_flagged';
         this.telemetry.recordOutcome(record.outcome);
         await this.save(record);
-        return this.executePendingAction(record);
+        return this.finishRequest(record, requestStart);
       }
       if (outcome.validationAttempts > 0) {
         this.telemetry.recordRetryOutcome('extraction', 'validation', 'succeeded', outcome.validationAttempts);
@@ -197,7 +198,22 @@ export class PipelineService {
       await this.save(record);
     }
 
-    return this.executePendingAction(record);
+    return this.finishRequest(record, requestStart);
+  }
+
+  /**
+   * Runs the pending Gitea action and records the whole-request 'end_to_end'
+   * stage timing (#43) once processing has actually happened this call —
+   * never on the already-completed short-circuit at the top of
+   * processReport, so a cache-hit repeat POST doesn't skew the p95.
+   */
+  private async finishRequest(record: DecisionRecord, requestStart: number): Promise<ResponseEnvelope> {
+    const envelope = await this.executePendingAction(record);
+    const endToEndTiming: StageTiming = { stage: 'end_to_end', duration_ms: Date.now() - requestStart, candidate_issue_number: null };
+    record.stage_timings_ms.push(endToEndTiming);
+    this.recordStage(record.report_hash, endToEndTiming);
+    await this.save(record);
+    return envelope;
   }
 
   /**

@@ -173,6 +173,25 @@
           "expr": "{job=\"triage-service\"}"
         }
       ]
+    },
+    {
+      "id": 10,
+      "type": "alertlist",
+      "title": "Red-Light Alerts (ticket #43)",
+      "description": "Live state of the six provisioned alert rules (observability/grafana/provisioning/alerting/rules.yml) — Gitea unreachable, LLM transient-error rate, validation-retry-budget exhaustion, Review Flag rate spike, duplicate-judgment silent-skip, p95 end-to-end latency. Dashboard-only: no Alertmanager/notification channel behind these.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 39 },
+      "options": {
+        "showOptions": "all",
+        "maxItems": 12,
+        "sortOrder": 1,
+        "dashboardAlerts": false,
+        "alertName": "",
+        "alertInstanceLabelFilter": "",
+        "datasource": "",
+        "folder": "Triage Service",
+        "stateFilter": { "firing": true, "pending": true, "noData": false, "normal": true, "error": true },
+        "viewMode": "list"
+      }
     }
   ]
 }

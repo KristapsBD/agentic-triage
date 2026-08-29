@@ -10,3 +10,13 @@ scrape_configs:
       - targets: ["triage-service:8000"]
         labels:
           service: triage-service
+
+  # Ticket #43: Gitea's own built-in metrics endpoint (GITEA__metrics__ENABLED,
+  # docker-compose.yml), scraped purely so the "Gitea unreachable" alert rule
+  # can key off up{job="gitea"} — this repo doesn't otherwise care about
+  # Gitea's internal Go-runtime metric values.
+  - job_name: gitea
+    static_configs:
+      - targets: ["gitea:3000"]
+        labels:
+          service: gitea

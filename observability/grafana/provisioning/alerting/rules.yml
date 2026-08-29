@@ -1,0 +1,363 @@
+# Provisioned alert rules (ticket #43) — six independent red/green failure
+# modes, loaded into the same "Triage Service" folder the dashboard provider
+# (ticket #42) already creates. Deliberately dashboard-only: no contact
+# points/notification policies are provisioned here, so a firing rule is
+# only ever visible in Grafana's Alerting page and the dashboard's Alert
+# List panel — never routed to email/Slack/webhook/Alertmanager.
+#
+# Every threshold below is a conservative placeholder documented as tunable
+# — no real traffic has been observed yet (same spirit as
+# service/src/scripts/tune-duplicate-floor.ts). See docs/adr/0009 for the
+# rationale behind each one.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: red-light-alerts
+    folder: Triage Service
+    interval: 1m
+    rules:
+      # 1. Gitea unreachable — Prometheus scrape of Gitea's own /metrics
+      # (GITEA__metrics__ENABLED, docker-compose.yml) reports the target
+      # down. noDataState: Alerting because a target that drops out of
+      # Prometheus's series entirely (rather than reporting up=0) is itself
+      # a failure to fail safe on, not a benign gap.
+      - uid: bt43-gitea-unreachable
+        title: Gitea unreachable
+        condition: C
+        data:
+          - refId: A
+            queryType: ''
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: up{job="gitea"}
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            queryType: ''
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [1]
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+        noDataState: Alerting
+        execErrState: Error
+        for: 1m
+        isPaused: false
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Prometheus has not scraped Gitea as up in the last minute.'
+          threshold: 'up{job="gitea"} < 1 for 1m — conservative default, not data-driven yet.'
+
+      # 2. LLM transient-error rate — extraction/duplicate_judgment calls
+      # that exhausted their transient-API retry budget (ADR-0008): real
+      # Anthropic-side failures, not validation disagreements.
+      - uid: bt43-llm-transient-error-rate
+        title: LLM transient-error rate
+        condition: C
+        data:
+          - refId: A
+            queryType: ''
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: sum(increase(triage_retry_outcomes_total{budget="transient",outcome="exhausted"}[5m]))
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            queryType: ''
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 1m
+        isPaused: false
+        labels:
+          severity: warning
+        annotations:
+          summary: 'At least one extraction/duplicate_judgment call exhausted its transient-retry budget in the last 5m.'
+          threshold: 'increase(...transient/exhausted[5m]) > 0 — fires on any occurrence; tune upward once real traffic volume is known.'
+
+      # 3. Validation-retry-budget exhaustion rate — the model's output kept
+      # failing schema validation until the budget ran out (ADR-0008),
+      # distinct from #2's infrastructure-hiccup case.
+      - uid: bt43-validation-retry-exhaustion-rate
+        title: Validation-retry-budget exhaustion rate
+        condition: C
+        data:
+          - refId: A
+            queryType: ''
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: sum(increase(triage_retry_outcomes_total{budget="validation",outcome="exhausted"}[5m]))
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            queryType: ''
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 1m
+        isPaused: false
+        labels:
+          severity: warning
+        annotations:
+          summary: 'At least one extraction/duplicate_judgment call exhausted its validation-retry budget in the last 5m.'
+          threshold: 'increase(...validation/exhausted[5m]) > 0 — fires on any occurrence; tune upward once real traffic volume is known.'
+
+      # 4. Review Flag rate spike — ratio-based rather than absolute, so it
+      # reads as a genuine mix-shift rather than firing on every single
+      # Review Flag in low-traffic periods.
+      - uid: bt43-review-flag-rate-spike
+        title: Review Flag rate spike
+        condition: C
+        data:
+          - refId: A
+            queryType: ''
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: sum(rate(triage_outcomes_total{outcome="review_flagged"}[5m])) / sum(rate(triage_outcomes_total[5m]))
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            queryType: ''
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.3]
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 1m
+        isPaused: false
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Over 30% of outcomes in the last 5m were review_flagged.'
+          threshold: 'review_flagged share of outcomes > 0.3 over rate(...[5m]) — conservative default pending real traffic mix.'
+
+      # 5. Duplicate-judgment silent-skip firing — ticket #41's previously-
+      # silent path (a candidate's judgment exhausts its validation budget
+      # and is dropped rather than judged). Any occurrence is worth
+      # surfacing immediately: `for: 0s` fires on the first breach.
+      - uid: bt43-duplicate-judgment-silent-skip
+        title: Duplicate-judgment silent-skip firing
+        condition: C
+        data:
+          - refId: A
+            queryType: ''
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: sum(increase(triage_duplicate_judgment_silent_skip_total[5m]))
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            queryType: ''
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 0s
+        isPaused: false
+        labels:
+          severity: critical
+        annotations:
+          summary: 'A Duplicate Candidate judgment exhausted its validation budget and was silently skipped in the last 5m.'
+          threshold: 'increase(triage_duplicate_judgment_silent_skip_total[5m]) > 0, for: 0s — any occurrence fires immediately, matching the README''s flagged rough edge.'
+
+      # 6. p95 end-to-end latency breach — whole-request wall-clock time
+      # (types.ts PipelineStage 'end_to_end', added in this ticket), not a
+      # pooled quantile across unrelated per-stage buckets.
+      - uid: bt43-p95-end-to-end-latency-breach
+        title: p95 end-to-end latency breach
+        condition: C
+        data:
+          - refId: A
+            queryType: ''
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: histogram_quantile(0.95, sum(rate(triage_stage_duration_ms_bucket{stage="end_to_end"}[5m])) by (le))
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            queryType: ''
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [5000]
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 2m
+        isPaused: false
+        labels:
+          severity: warning
+        annotations:
+          summary: 'p95 end-to-end request latency has exceeded 5s for 2m.'
+          threshold: 'histogram_quantile(0.95, ...end_to_end...) > 5000ms — conservative default, no historical baseline yet.'

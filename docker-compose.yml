@@ -11,6 +11,11 @@ services:
       - GITEA__server__HTTP_PORT=3000
       - GITEA__database__DB_TYPE=sqlite3
       - GITEA__database__PATH=/data/gitea/gitea.db
+      # Ticket #43: exposes GET /metrics (Prometheus text-exposition,
+      # unauthenticated — matching the rest of the demo stack's no-auth
+      # posture) so Prometheus can alert on Gitea reachability via
+      # up{job="gitea"} without a separate blackbox-exporter container.
+      - GITEA__metrics__ENABLED=true
     restart: unless-stopped
     volumes:
       - gitea-data:/data
@@ -116,6 +121,7 @@ services:
     volumes:
       - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
       - ./observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./observability/grafana/provisioning/alerting:/etc/grafana/provisioning/alerting:ro
       - ./observability/grafana/dashboards:/etc/grafana/provisioning/dashboards-json:ro
       - grafana-data:/var/lib/grafana
     ports:

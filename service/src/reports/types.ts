@@ -94,7 +94,11 @@ export type PipelineStage =
   | 'duplicate_judgment'
   | 'gitea_list_open_issues'
   | 'gitea_create_issue'
-  | 'gitea_comment_issue';
+  | 'gitea_comment_issue'
+  // Ticket #43: whole-request wall-clock time, recorded once per freshly
+  // processed report (never on an idempotent cache-hit return) so Grafana
+  // can alert on p95 end-to-end latency without summing per-stage buckets.
+  | 'end_to_end';
 
 export interface StageTiming {
   stage: PipelineStage;
