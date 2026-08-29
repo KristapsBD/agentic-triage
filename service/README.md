@@ -62,15 +62,20 @@ stores every project in one data volume, so it would also wipe `bug-triage`
 re-pushing all branches.
 
 To reset just the demo target (what most "before a demo" resets actually
-want): delete the `acme-app` repo from Gitea's web UI
-(`http://localhost:3000/triageadmin/acme-app/settings` → Danger Zone →
-Delete This Repository — a deliberate one-click confirmation, not
-something worth scripting), then:
+want): delete the `acme-app` repo, recreate it, and reseed:
 
 ```
-./bootstrap.sh                                               # recreates acme-app + labels
-docker compose run --rm triage-service npm run seed:set-a    # reseeds Set A
+./delete-demo-repo.sh                                         # deletes acme-app via Gitea's REST API
+./bootstrap.sh                                                # recreates acme-app + labels
+docker compose run --rm triage-service npm run seed:set-a     # reseeds Set A
 ```
+
+`delete-demo-repo.sh` resolves the repo to delete only from
+`GITEA_REPO_OWNER`/`GITEA_REPO_NAME` in `.env` (the same vars
+`bootstrap.sh` uses) and refuses to send the request at all unless that
+name matches the hardcoded, known-safe `acme-app` — it cannot be pointed
+at `bug-triage` (this codebase's own Gitea project) by any argument or
+env override. `make fresh-start` runs all three steps below in sequence.
 
 The Decision Record SQLite store also needs clearing if you do this,
 since its entries would otherwise reference issue numbers from the

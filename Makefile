@@ -70,13 +70,8 @@ reset-demo: ## Reset just the demo target's Decision Record store (delete acme-a
 	docker volume rm agentic-sdw_triage-decisions
 	docker compose up -d --build triage-service
 
-fresh-start: ## Full demo reset to a clean slate (see service/README.md "Fresh start" — delete acme-app in Gitea's UI first)
-	@printf '%s\n' \
-		"Fresh start requires one manual step first (deliberately not scripted, see service/README.md):" \
-		"  Delete the acme-app repo in Gitea's UI:" \
-		"  http://localhost:3000/triageadmin/acme-app/settings -> Danger Zone -> Delete This Repository" \
-		"Press Enter once that's done, or Ctrl-C to abort."
-	@read _ignore
+fresh-start: ## Full demo reset to a clean slate (see service/README.md "Fresh start")
+	./delete-demo-repo.sh
 	./bootstrap.sh
 	docker compose run --rm triage-service npm run seed:set-a
 	docker compose down triage-service
