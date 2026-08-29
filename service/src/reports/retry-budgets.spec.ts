@@ -5,6 +5,7 @@ import { PipelineUnavailableError, ExtractionValidationError, TransientAPIError 
 import { FakeTriagePort } from './testing/fake-triage-port';
 import { RetryBudgets } from './retry';
 import { TriageDecision } from './types';
+import { FakeTelemetryRecorder } from '../telemetry/testing/fake-telemetry-recorder';
 
 const SETTINGS: RetryBudgets = { validation_retry_budget: 2, transient_retry_budget: 3, transient_retry_backoff_seconds: 0 };
 
@@ -123,6 +124,25 @@ describe('PipelineService retry budgets', () => {
 
     expect(envelope.outcome).toBe('issue_created');
     expect(envelope.duplicate_verdict?.tier).toBe('not_a_duplicate');
+  });
+
+  it('records exactly one silent-skip telemetry increment when a candidate judgment exhausts its validation budget', async () => {
+    const raw = 'ambiguous match';
+    const port = new FakeTriagePort();
+    port.extractionQueue = [decision()];
+    port.candidatesByReport.set(raw, [{ issue_number: 1, title: 'existing', body: '...', similarity: 0.8 }]);
+    port.judgeDuplicateQueueByCandidate.set(1, [
+      new ExtractionValidationError('bad 1'),
+      new ExtractionValidationError('bad 2'),
+      new ExtractionValidationError('bad 3'),
+    ]);
+    const telemetry = new FakeTelemetryRecorder();
+
+    const envelope = await new PipelineService(port, SETTINGS, telemetry).processReport(raw);
+
+    expect(envelope.outcome).toBe('issue_created');
+    expect(envelope.duplicate_verdict?.tier).toBe('not_a_duplicate');
+    expect(telemetry.duplicateJudgmentSkips).toEqual([{ reportHash: expect.any(String), candidateIssueNumber: 1 }]);
   });
 
   it('surfaces transient exhaustion on a duplicate-judgment call as PipelineUnavailableError', async () => {
