@@ -55,6 +55,8 @@ import {
 import { PipelineUnavailableError } from './pipeline.errors';
 import { RetryBudgets, withRetryBudgets } from './retry';
 import { isBundled } from './schemas';
+import { NoopTelemetryRecorder } from '../telemetry/noop-telemetry-recorder';
+import { TELEMETRY_RECORDER, TelemetryRecorder } from '../telemetry/telemetry-recorder.interface';
 import { TRIAGE_PORT, TriagePort } from './triage-port.interface';
 import {
   DecisionRecord,
@@ -106,6 +108,7 @@ export class PipelineService {
   constructor(
     @Inject(TRIAGE_PORT) private readonly port: TriagePort,
     @Inject(SETTINGS) private readonly settings: RetryBudgets = DEFAULT_RETRY_BUDGETS,
+    @Inject(TELEMETRY_RECORDER) private readonly telemetry: TelemetryRecorder = new NoopTelemetryRecorder(),
   ) {}
 
   async processReport(rawReport: string): Promise<ResponseEnvelope> {
@@ -127,13 +130,20 @@ export class PipelineService {
     if (record.triage_decision === null) {
       const stageStart = Date.now();
       const outcome = await withRetryBudgets((feedback) => this.port.extract(rawReport, feedback), this.settings);
-      record.stage_timings_ms.push({ stage: 'extraction', duration_ms: Date.now() - stageStart, candidate_issue_number: null });
+      const extractionTiming: StageTiming = { stage: 'extraction', duration_ms: Date.now() - stageStart, candidate_issue_number: null };
+      record.stage_timings_ms.push(extractionTiming);
+      this.recordStage(reportHash, extractionTiming);
       record.transient_retries_consumed += outcome.transientAttempts;
 
       if (outcome.failure === 'transient_exhausted') {
+        this.telemetry.recordRetryOutcome('extraction', 'transient', 'exhausted', outcome.transientAttempts);
         throw new PipelineUnavailableError(reportHash, 'llm_unavailable', outcome.lastError ?? '');
       }
+      if (outcome.transientAttempts > 0) {
+        this.telemetry.recordRetryOutcome('extraction', 'transient', 'succeeded', outcome.transientAttempts);
+      }
       if (outcome.failure === 'validation_exhausted') {
+        this.telemetry.recordRetryOutcome('extraction', 'validation', 'exhausted', outcome.validationAttempts);
         record.validation_retries_consumed = outcome.validationAttempts;
         record.validation_budget_exhausted = true;
         const confidence = computeConfidence({
@@ -152,13 +162,19 @@ export class PipelineService {
           target_issue: null,
         };
         record.outcome = 'review_flagged';
+        this.telemetry.recordOutcome(record.outcome);
         await this.save(record);
         return this.executePendingAction(record);
+      }
+      if (outcome.validationAttempts > 0) {
+        this.telemetry.recordRetryOutcome('extraction', 'validation', 'succeeded', outcome.validationAttempts);
       }
 
       const { decision, usage } = outcome.result as { decision: TriageDecision; usage: { input_tokens: number; output_tokens: number } };
       record.triage_decision = decision;
-      record.token_usage.push({ call: 'extract', candidate_issue_number: null, ...usage });
+      const extractUsage: LlmCallUsage = { call: 'extract', candidate_issue_number: null, ...usage };
+      record.token_usage.push(extractUsage);
+      this.telemetry.recordTokenUsage(extractUsage);
       record.validation_retries_consumed = outcome.validationAttempts;
       record.validation_budget_exhausted = false;
       await this.save(record);
@@ -176,6 +192,8 @@ export class PipelineService {
       record.token_usage.push(...routing.tokenUsage);
       record.stage_timings_ms.push(...routing.stageTimings);
       record.transient_retries_consumed += routing.transientRetriesConsumed;
+      this.recordRoutingTelemetry(reportHash, routing);
+      this.telemetry.recordOutcome(record.outcome);
       await this.save(record);
     }
 
@@ -338,14 +356,18 @@ export class PipelineService {
         }
         const stageStart = Date.now();
         record.gitea_issue_number = await this.port.createIssue(action.title, action.body, action.labels);
-        record.stage_timings_ms.push({ stage: 'gitea_create_issue', duration_ms: Date.now() - stageStart, candidate_issue_number: null });
+        const timing: StageTiming = { stage: 'gitea_create_issue', duration_ms: Date.now() - stageStart, candidate_issue_number: null };
+        record.stage_timings_ms.push(timing);
+        this.recordStage(record.report_hash, timing);
       } else if (action.type === 'comment') {
         if (action.target_issue === null || action.body === null) {
           throw new Error('comment action missing target_issue/body');
         }
         const stageStart = Date.now();
         await this.port.commentIssue(action.target_issue, action.body);
-        record.stage_timings_ms.push({ stage: 'gitea_comment_issue', duration_ms: Date.now() - stageStart, candidate_issue_number: null });
+        const timing: StageTiming = { stage: 'gitea_comment_issue', duration_ms: Date.now() - stageStart, candidate_issue_number: null };
+        record.stage_timings_ms.push(timing);
+        this.recordStage(record.report_hash, timing);
         record.gitea_issue_number = action.target_issue;
       }
       record.status = 'completed';
@@ -397,6 +419,41 @@ export class PipelineService {
       duplicate_verdict: record.duplicate_verdict,
       confidence: record.confidence,
     };
+  }
+
+  private recordStage(reportHash: string, timing: StageTiming): void {
+    this.telemetry.recordStageLatency(timing);
+    this.telemetry.logStage(reportHash, timing.stage, {
+      duration_ms: timing.duration_ms,
+      candidate_issue_number: timing.candidate_issue_number,
+    });
+  }
+
+  /**
+   * Ticket #41: findDuplicateVerdict stays a plain function with no
+   * telemetry dependency of its own — PipelineService is the only seam
+   * TelemetryRecorder is injected into, so it reports the whole evidence
+   * trail (stage timings, token usage, the Duplicate Verdict tier, and any
+   * silently-skipped candidates) once routing returns it.
+   */
+  private recordRoutingTelemetry(reportHash: string, routing: RoutingResult): void {
+    for (const timing of routing.stageTimings) {
+      this.recordStage(reportHash, timing);
+    }
+    for (const usage of routing.tokenUsage) {
+      this.telemetry.recordTokenUsage(usage);
+    }
+    if (routing.verdict !== null) {
+      this.telemetry.recordDuplicateVerdict(routing.verdict.tier);
+    }
+    for (const considered of routing.candidatesConsidered) {
+      if (considered.same_bug === null) {
+        this.telemetry.recordDuplicateJudgmentSkipped(reportHash, considered.issue_number);
+      }
+    }
+    if (routing.transientRetriesConsumed > 0) {
+      this.telemetry.recordRetryOutcome('duplicate_judgment', 'transient', 'succeeded', routing.transientRetriesConsumed);
+    }
   }
 
   private async save(record: DecisionRecord): Promise<void> {
