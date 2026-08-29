@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 .PHONY: help bootstrap up down stop restart build logs logs-service logs-gitea ps \
-	sh sh-gitea gitea-cli seed eval reset-demo fresh-start \
+	sh sh-gitea gitea-cli seed eval eval-set-d reset-demo fresh-start \
 	test test-watch typecheck lint preflight check status clean-volumes \
 	add
 
@@ -64,6 +64,9 @@ seed: ## Seed Set A demo issues into the target repo (idempotent)
 
 eval: ## Run the eval harness (threshold regression + Set B + Set C) against the live service + real Anthropic API
 	docker compose run --rm -e TRIAGE_SERVICE_URL=http://triage-service:8000 triage-service npm run eval
+
+eval-set-d: ## Run the standalone Set D anchor suite (Set A baseline only, not part of `make eval`/preflight)
+	docker compose run --rm -e TRIAGE_SERVICE_URL=http://triage-service:8000 triage-service npm run eval:set-d
 
 reset-demo: ## Reset just the demo target's Decision Record store (delete acme-app in Gitea's UI first, see service/README.md)
 	docker compose down triage-service
