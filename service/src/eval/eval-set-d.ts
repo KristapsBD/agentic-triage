@@ -102,6 +102,20 @@ function checkSeverityIn(allowed: Severity[]): Check {
   };
 }
 
+function checkComponentsInclude(expected: Component): Check {
+  return (body) => {
+    const actual = body.triage_decision?.components ?? [];
+    return actual.includes(expected) ? [] : [`expected components to include ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`];
+  };
+}
+
+function checkComponentsMin(n: number): Check {
+  return (body) => {
+    const actual = body.triage_decision?.components ?? [];
+    return actual.length >= n ? [] : [`expected >= ${n} components, got ${JSON.stringify(actual)}`];
+  };
+}
+
 function checkDuplicateTier(expectedTier: DuplicateTier, expectedTargetTitleSubstring: string): Check {
   return async (body) => {
     const failures: string[] = [];
@@ -233,7 +247,7 @@ const CASES: Case[] = [
       "anyway.\n\n" +
       "Update (8/28): also reproduced this on an iPad running iOS 17.4 in landscape mode, " +
       "same ~20 item threshold, so it doesn't seem tied to phone screen size specifically.",
-    check: all(checkReportType('bug'), checkOutcome('issue_created')),
+    check: all(checkReportType('bug'), checkOutcome('issue_created'), checkComponentsInclude('frontend')),
     // The pasted crash log is the whole reason support forwarded this
     // instead of just describing the symptom -- it needs to actually reach
     // the filed issue for an engineer to act on it (same content-fidelity
@@ -319,7 +333,7 @@ const CASES: Case[] = [
     // reset bug should still surface a cross-link, even though review_
     // flagged (not an auto-comment) is still the only outcome -- a human
     // still decides how to split a bundle.
-    check: all(checkOutcome('review_flagged'), checkDuplicateTierNot('not_a_duplicate')),
+    check: all(checkOutcome('review_flagged'), checkDuplicateTierNot('not_a_duplicate'), checkComponentsMin(2)),
     // Sanity: bundling must not have side-stepped into auto-commenting (and
     // thus closing/altering) the target directly either.
     postCheck: postCheckIssueStateByTitle('Password reset email never arrives', 'open'),
@@ -352,7 +366,7 @@ const CASES: Case[] = [
       "optimistically marks the order refunded locally even when the upstream payment gateway " +
       "call timed out, instead of rolling back. Flagging this as urgent given the " +
       "financial/trust implications.",
-    check: all(checkReportType('bug'), checkSeverityIn(['critical', 'high'])),
+    check: all(checkReportType('bug'), checkSeverityIn(['critical', 'high']), checkComponentsInclude('backend')),
     postCheck: postCheckBodyContains(ownIssueNumber, 'PaymentGatewayTimeoutError'),
   },
   {
