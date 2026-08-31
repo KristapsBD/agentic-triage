@@ -4,7 +4,7 @@ Turns a free-text bug report into a structured, triaged Gitea issue, checking
 for duplicates before creating anything. Implements the spec in #5 (tickets
 #6–#14), rebuilt in NestJS/TypeScript per #26 (tickets #27-#36) — see those
 issues for the full build history, and `docs/adr/` at the repo root for the
-decisions this build follows (0001-0008, plus the #26 addendum to ADR-0003).
+decisions this build follows (0001-0012, plus the #26 addendum to ADR-0003).
 
 No frontend: `1_candidate_brief.md` explicitly says "input can arrive
 however you like — an HTTP endpoint or a CLI both fine," and the spec's Out
@@ -237,9 +237,10 @@ business logic — every provider below is a plain, directly-testable class.
   real `TriagePort`, the TS equivalent of the old `real_port.py`
   composition.
 - `src/reports/testing/fake-triage-port.ts` — one fake implementation of the
-  same port, driving every orchestration test (`src/**/*.spec.ts`, 77
-  tests) with zero network calls. This is where every ADR's routing logic
-  gets its coverage.
+  same port, driving most orchestration tests (`src/**/*.spec.ts`) with
+  zero network calls. This is where every ADR's routing logic gets its
+  coverage — except the DI composition itself, covered instead by
+  `triage-port.provider.spec.ts` against the real `useFactory`.
 
 ## Testing
 
@@ -257,7 +258,7 @@ or inside the already-built image:
 docker compose run --rm triage-service npm test
 ```
 
-113 tests across 23 suites, covering the orchestration logic against
+115 tests across 24 suites, covering the orchestration logic against
 `FakeTriagePort` — happy path, report-type routing, duplicate detection
 (incl. the false-merge near-miss), retry budgets, unified Review Flags +
 bundling, idempotency, the HTTP response contract, and the Zod schema's
@@ -280,9 +281,10 @@ service's address on the compose network, not `localhost`. `npm run eval`
 also runs the duplicate-similarity threshold regression check and Set C —
 see `npm run eval:set-b` / `eval:set-c` to run either alone.)
 
-`npm run eval:set-d` / `make eval-set-d` is a separate two-case anchor
-suite that only needs Set A seeded — no Set B/C run required first — so it
-works right after `make fresh-start && make seed` alone. It's deliberately
+`npm run eval:set-d` / `make eval-set-d` is a separate anchor suite (two
+anchor cases plus seven more added since, `D3`-`D9`) that only needs Set A
+seeded — no Set B/C run required first — so it works right after
+`make fresh-start && make seed` alone. It's deliberately
 excluded from `npm run eval` / `make eval` / `npm run preflight`: a Set D
 result should never be mistaken for a broken build or block routine work.
 

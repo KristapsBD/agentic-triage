@@ -6,6 +6,7 @@ const BASE = {
   validationRetriesConsumed: 0,
   validationBudgetExhausted: false,
   duplicateVerdictTier: null,
+  duplicateSimilarity: null,
   reviewFlagged: false,
 };
 
@@ -37,6 +38,20 @@ describe('computeConfidence', () => {
   it('does not cap for a clear_duplicate or not_a_duplicate tier on its own', () => {
     expect(computeConfidence({ ...BASE, duplicateVerdictTier: 'clear_duplicate' }).band).toBe('high');
     expect(computeConfidence({ ...BASE, duplicateVerdictTier: 'not_a_duplicate' }).band).toBe('high');
+  });
+
+  it('stays high for a clear_duplicate verdict well above the clear-duplicate band floor', () => {
+    expect(computeConfidence({ ...BASE, duplicateVerdictTier: 'clear_duplicate', duplicateSimilarity: 0.65 }).band).toBe('high');
+  });
+
+  // F4 (scout-hire-audit-opus): ADR-0001/CONTEXT.md both say Confidence is
+  // computed from duplicate similarity, not just the categorical tier --
+  // the audit reproduced an auto-merge at similarity 0.4829 (below the
+  // 0.5 clear-duplicate band floor) reported as confidence: high.
+  it('bands a clear_duplicate verdict down to medium when similarity falls below the clear-duplicate band floor', () => {
+    const result = computeConfidence({ ...BASE, duplicateVerdictTier: 'clear_duplicate', duplicateSimilarity: 0.4829 });
+    expect(result.band).toBe('medium');
+    expect(result.reason).toContain('0.4829');
   });
 
   it('every result includes a non-empty one-line reason', () => {

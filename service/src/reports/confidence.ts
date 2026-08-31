@@ -11,6 +11,7 @@ export interface ConfidenceInputs {
   validationRetriesConsumed: number;
   validationBudgetExhausted: boolean;
   duplicateVerdictTier: DuplicateTier | null;
+  duplicateSimilarity: number | null;
   reviewFlagged: boolean;
 }
 
@@ -20,6 +21,14 @@ export interface ConfidenceResult {
 }
 
 const BANDS: Confidence[] = ['high', 'medium', 'low'];
+
+// Same evidence duplicate-threshold-regression.ts's CLEAR_BAND_MIN asserts
+// on: a genuine clear-duplicate pair scored ~0.65, near-miss cases scored
+// 0.38-0.44. A clear_duplicate verdict whose similarity falls in/near that
+// near-miss band is a thinner signal than the tier alone suggests -- ADR-0001
+// and CONTEXT.md both say Confidence is computed from "duplicate similarity
+// score", not just the categorical tier.
+const CLEAR_DUPLICATE_CONFIDENCE_FLOOR = 0.5;
 
 export function computeConfidence(inputs: ConfidenceInputs): ConfidenceResult {
   if (inputs.validationBudgetExhausted) {
@@ -44,6 +53,19 @@ export function computeConfidence(inputs: ConfidenceInputs): ConfidenceResult {
 
   if (inputs.reviewFlagged) {
     return { band: 'medium', reason: 'this report was routed to human review' };
+  }
+
+  if (
+    inputs.duplicateVerdictTier === 'clear_duplicate' &&
+    inputs.duplicateSimilarity !== null &&
+    inputs.duplicateSimilarity < CLEAR_DUPLICATE_CONFIDENCE_FLOOR
+  ) {
+    return {
+      band: 'medium',
+      reason:
+        `matched as a clear duplicate at similarity ${inputs.duplicateSimilarity.toFixed(4)}, ` +
+        `below the ${CLEAR_DUPLICATE_CONFIDENCE_FLOOR} clear-duplicate band floor -- treat this merge as less certain`,
+    };
   }
 
   return { band: 'high', reason: 'clean extraction with no validation retries or unresolved ambiguity' };

@@ -151,6 +151,7 @@ export class PipelineService {
           validationRetriesConsumed: outcome.validationAttempts,
           validationBudgetExhausted: true,
           duplicateVerdictTier: null,
+          duplicateSimilarity: null,
           reviewFlagged: true,
         });
         record.confidence = confidence.band;
@@ -228,6 +229,7 @@ export class PipelineService {
         validationRetriesConsumed,
         validationBudgetExhausted: false,
         duplicateVerdictTier: null,
+        duplicateSimilarity: null,
         reviewFlagged: false,
       });
       return { action: NO_ACTION, outcome: 'dropped_spam', verdict: null, confidence, ...NO_EVIDENCE };
@@ -238,6 +240,7 @@ export class PipelineService {
         validationRetriesConsumed,
         validationBudgetExhausted: false,
         duplicateVerdictTier: null,
+        duplicateSimilarity: null,
         reviewFlagged: false,
       });
       const body = issueBody(rawReport, `**Report Type:** feature_request\n\n${decision.title}`);
@@ -251,6 +254,7 @@ export class PipelineService {
         validationRetriesConsumed,
         validationBudgetExhausted: false,
         duplicateVerdictTier: detection.verdict.tier,
+        duplicateSimilarity: detection.verdict.similarity,
         reviewFlagged: true,
       });
       const body = reviewFlagBody(rawReport, UNCLEAR_REASON, confidence, duplicateCrossLinkNote(detection.verdict));
@@ -290,6 +294,7 @@ export class PipelineService {
         validationRetriesConsumed,
         validationBudgetExhausted: false,
         duplicateVerdictTier: verdict.tier,
+        duplicateSimilarity: verdict.similarity,
         reviewFlagged: false,
       });
       const body = duplicateCommentBody(rawReport, verdict.rationale);
@@ -302,6 +307,7 @@ export class PipelineService {
         validationRetriesConsumed,
         validationBudgetExhausted: false,
         duplicateVerdictTier: verdict.tier,
+        duplicateSimilarity: verdict.similarity,
         reviewFlagged: true,
       });
       const reason =
@@ -317,6 +323,7 @@ export class PipelineService {
       validationRetriesConsumed,
       validationBudgetExhausted: false,
       duplicateVerdictTier: verdict.tier,
+      duplicateSimilarity: verdict.similarity,
       reviewFlagged: false,
     });
     const body = bugIssueBody(rawReport, decision);
@@ -331,6 +338,7 @@ export class PipelineService {
       validationRetriesConsumed,
       validationBudgetExhausted: false,
       duplicateVerdictTier: detection.verdict.tier,
+      duplicateSimilarity: detection.verdict.similarity,
       reviewFlagged: true,
     });
     const listing = decision.distinct_issues.map((issue) => `- ${issue}`).join('\n');
