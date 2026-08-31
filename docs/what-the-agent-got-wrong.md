@@ -199,3 +199,132 @@ audit-driven fixes followed the same discipline from a different angle: two
 independent adversarial readers traced the seams a black-box eval run can't
 reach on its own — DI wiring, concurrency, doc/code drift — and those
 traces, not intuition, produced the fix list above.
+
+## Working notes: building this in an agent-driven workflow
+
+The brief screens explicitly for the experience of steering agents, catching
+drift, and hardening systems built on top of an LLM — which is a different
+axis than whether any given line of `service/src/` is correct. The findings
+above are about the artifact; these are about the process of producing it,
+kept as working notes during the build and worth landing somewhere that
+survives the same `git bundle` problem the disclosure doc itself exists to
+solve (Gitea issue comments don't survive a bundle/clone either).
+
+**Concurrent agents against one repo conflict, and that needs an actual
+mechanism, not discipline.** Running more than one coding agent against the
+same working tree at the same time produces the obvious failure mode: two
+agents editing overlapping files, one's uncommitted state clobbering the
+other's, or both racing to commit against the same branch. This isn't a
+one-off annoyance to work around in the moment, it's a process gap that
+needs a real answer before running agents in parallel becomes routine —
+`docs/agents/parallel-work.md` (worktrees, one per concurrent agent) is
+where this repo's answer ended up, but it's worth naming that the honest
+starting point was "I don't have a mechanism for this yet," not that the
+answer was obvious in advance. Sandboxing is the adjacent question — even
+with separate worktrees, an agent that can execute shell commands still
+shares whatever it can reach outside the tree unless something isolates it
+— and is a further hardening step past worktrees alone rather than a
+substitute for them.
+
+**Context rot is real, and the right response at this scope was a budget,
+not a token-spend optimization project.** Long agent sessions degrade —
+instructions get half-followed, earlier context gets misremembered or
+dropped, edits get sloppier — well before the model literally runs out of
+context window, so the practical discipline was keeping session usage under
+roughly 20% of the 200k window available on Sonnet 5, and starting a fresh
+session rather than pushing a long one further once it approached that
+line. Migrating the service from its original Python implementation to
+NestJS/TypeScript under that discipline went smoothly. What this
+deliberately did *not* do is optimize token spend at the level of individual
+tasks — trimming prompts, caching more aggressively, minimizing tool-call
+round trips — because at this scope (a take-home exercise, not a
+production system processing sustained volume) that optimization wouldn't
+have paid for the engineering time it cost. That's a real trade-off, not an
+oversight, and it's a legitimate future consideration if this system's
+actual usage volume ever justified revisiting it.
+
+**Documentation drifts stale fast in an agent-driven codebase, and this
+repo already produced a concrete instance of exactly that.** READMEs, ADRs,
+`CONTEXT.md`, and this disclosure doc itself are all prose describing code
+that an agent can rewrite in minutes — nothing forces the two to stay in
+sync the way, say, a type checker forces code and its call sites to agree.
+The README test-count/Set-D staleness both independent audits caught (the
+F10/F7 findings: `README.md` claiming "77 tests" in one place and "113" in
+another in the same document, and describing Set D as a "two-case anchor
+suite" after it had grown to nine cases) is that exact failure, caught
+externally rather than by any process this build had for keeping docs
+current as the suite grew. It's a small, low-severity finding on its own,
+but it's the concrete evidence for the general worry: prose documentation
+in a fast-moving, agent-edited codebase needs either much tighter discipline
+about updating it in the same pass as the code it describes, or some kind
+of automated check, because "the agent will remember to update the README"
+is not a reliable mechanism.
+
+**Trust in agent output should be backed by structural checks, not just
+better prompting or more careful test-writing — and this build hit a real
+instance of why.** The general principle is that an agent (or a human,
+for that matter) writing both the implementation and the tests for it can
+produce a test suite that's internally consistent but doesn't actually
+constrain production behavior, because the tests were written against the
+same mental model that produced the bug. The abstract version of this
+worry is that you want checks that don't depend on the code author having
+gotten the invariant right — the kind of thing row-level security or a
+database constraint gives you at the data layer, independent of whether
+every code path that touches that table remembered to enforce the rule
+itself. The F1/F2 finding above is that worry made concrete, not
+hypothetical: the unit suite asserted that the validation-retry feedback
+loop for duplicate judgment worked, and passed, because it drove
+`FakeTriagePort` directly rather than the real DI-composed `TriagePort` —
+so the suite was asserting trust in a wiring path that production had
+silently dropped a line from. A test suite that only ever exercises a fake
+can be perfectly green while the seam it claims to cover — the actual
+composition — has zero coverage. The fix (a spec against the real
+`useFactory`) closes this one instance; the general lesson is to keep
+looking for the places where "the tests pass" is standing in for "I trust
+the agent got this right" rather than for an independent, structural
+guarantee.
+
+**Prompt injection and useful information often live in the same string,
+and this build had to make that call for real, not hypothetically.** The
+raw bug report is untrusted input by construction — it's free text from
+whoever files it — but it's also the entire substance of what should end up
+in the resulting Gitea issue: repro steps, error messages, the exact wording
+that makes a report actionable are indistinguishable, at the level of "is
+this a string an attacker controls," from an injected instruction trying to
+manipulate the pipeline into applying a label it shouldn't or leaking
+something it shouldn't echo back. Redacting aggressively is the safe
+default, but it comes at the cost of stripping out the reproduction detail
+a human triager actually needs to act on the issue; not redacting risks
+exactly the injection and secret-leak scenarios the eval suite's Set C
+cases exist to catch. This wasn't resolved in the abstract — it's the exact
+shape of the redaction-coverage gap documented above, where `redactSecrets`
+covered the raw-report quote and supporting evidence but initially missed
+the other LLM-copied free-text channels reaching Gitea (extracted repro
+steps, `distinct_issues`, and the issue title itself), so a secret sitting
+in a repro step could reach Gitea unredacted while the raw report right
+next to it was scrubbed. Closing that gap was the right call for this
+system, but it's worth being honest that it was a judgment call under real
+tension, not a case where the safe answer and the useful answer coincided
+for free.
+
+**Visibility into what the system is actually doing matters more, not
+less, once an agent is the one building and running it.** An AI agent
+writing the code and then reporting "it works" turns the system into an
+abstract black box unless something forces the actual data and end results
+into view independent of what the agent claims — the whole point is to be
+able to spot bottlenecks, silent failures, and drift early rather than
+trusting a summary of the code's own behavior. This wasn't left as an
+abstract concern: it's the concrete reason this repo has an observability
+stack at all — Prometheus scraping `/metrics`, Grafana dashboards and six
+alert rules keyed off conditions like `up{job="gitea"}` (ADR-0009), Loki
+ingesting the service's structured JSON logs with `report_hash` and `stage`
+as queryable metadata, and the Decision Record itself acting as a
+ground-truth log of what the pipeline actually did for a given report,
+independent of any narration about what it was supposed to do. The same
+instinct is what made the two independent audits effective: F1's live
+false-merge and F2's DI wiring bug were both found by watching what the
+*composed, running* system actually produced against real input, not by
+re-reading the code and trusting that it did what it looked like it should
+do. Visibility over blind trust is the same discipline in both places —
+once applied to production behavior via telemetry, once applied to
+catching agent-introduced bugs via adversarial probing of the live system.
