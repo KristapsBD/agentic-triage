@@ -22,7 +22,7 @@ describe('PipelineService (Review Flag unification + Bundled Report handling)', 
     const raw = 'the export thing is timing out again, ugh, when will this get fixed';
     const port = new FakeTriagePort();
     port.extractionQueue = [decision({ title: 'Export operation times out', report_type: 'unclear' })];
-    const candidate: DuplicateCandidate = { issue_number: 2, title: 'CSV export times out', body: '...', similarity: 0.6 };
+    const candidate: DuplicateCandidate = { issue_number: 2, title: 'CSV export times out', body: '...', similarity: 0.6, labels: [] };
     port.candidatesByReport.set(raw, [candidate]);
     port.judgmentsByCandidate.set(2, { same_bug: 'possibly', rationale: 'both mention export timing out' });
 
@@ -95,6 +95,7 @@ describe('PipelineService (Review Flag unification + Bundled Report handling)', 
       title: 'Login button unresponsive on mobile Safari',
       body: '...',
       similarity: 0.8,
+      labels: [],
     };
     port.candidatesByReport.set(raw, [candidate]);
     port.judgmentsByCandidate.set(1, { same_bug: 'yes', rationale: 'same symptom, same platform' });
@@ -126,7 +127,7 @@ describe('PipelineService (Review Flag unification + Bundled Report handling)', 
     const rawPossible = 'possible dup case';
     const portA = new FakeTriagePort();
     portA.extractionQueue = [decision({ severity: 'low', components: ['unknown'] })];
-    const candidate: DuplicateCandidate = { issue_number: 1, title: 'x', body: 'y', similarity: 0.6 };
+    const candidate: DuplicateCandidate = { issue_number: 1, title: 'x', body: 'y', similarity: 0.6, labels: [] };
     portA.candidatesByReport.set(rawPossible, [candidate]);
     portA.judgmentsByCandidate.set(1, { same_bug: 'possibly', rationale: 'r' } as DuplicateJudgment);
     await new PipelineService(portA).processReport(rawPossible);
@@ -142,5 +143,65 @@ describe('PipelineService (Review Flag unification + Bundled Report handling)', 
 
     expect(bodyA.toLowerCase()).toContain('why this needs review');
     expect(bodyB.toLowerCase()).toContain('why this needs review');
+  });
+
+  // F1 (scout-hire-audit-opus): a bundled report's needs-triage placeholder
+  // is a normal open issue as far as listOpenIssues()/findDuplicateVerdict
+  // are concerned, so a later, distinct, well-specified report describing
+  // one of the bundle's constituent bugs is a legitimate "yes" match on
+  // the LLM's own honest reading. Reproduced live against issue #9 in
+  // scout-hire-audit-opus's report.md: two separate constituent bugs both
+  // auto-merged as clear_duplicate comments on the bundle placeholder,
+  // with no issue, severity, or component labels of their own. The fix
+  // demotes a "yes" match against a needs-triage/needs-info placeholder to
+  // possible_duplicate, so it still gets a real issue plus a cross-link.
+  it('does not clear-duplicate-merge a constituent bug into its own un-split bundle placeholder', async () => {
+    const rawBundle =
+      'Multiple issues: password reset emails not sent, timezone setting resets on save, ' +
+      'stale support email in invoice PDF.';
+    const bundlePort = new FakeTriagePort();
+    bundlePort.extractionQueue = [
+      decision({
+        title: 'Multiple issues: password reset emails not sent, timezone setting resets on save, stale support email in invoice PDF',
+        severity: 'medium',
+        distinct_issues: [
+          'Password reset emails not sent',
+          'Timezone setting resets on save',
+          'Stale support email in invoice PDF',
+        ],
+      }),
+    ];
+    const bundleEnvelope = await new PipelineService(bundlePort).processReport(rawBundle);
+    expect(bundleEnvelope.outcome).toBe('review_flagged');
+    // openIssues[0] is the just-created needs-triage placeholder.
+    const placeholder = bundlePort.openIssues[0];
+    expect(placeholder.labels).toContain('needs-triage');
+
+    const rawConstituent =
+      'The timezone dropdown in account settings resets itself to UTC whenever you save any ' +
+      'other setting on that page.';
+    bundlePort.extractionQueue = [decision({ title: 'Timezone dropdown resets to UTC on unrelated saves', severity: 'medium', components: ['backend'] })];
+    const candidate: DuplicateCandidate = {
+      issue_number: placeholder.number,
+      title: placeholder.title,
+      body: placeholder.body,
+      similarity: 0.4829,
+      labels: placeholder.labels,
+    };
+    bundlePort.candidatesByReport.set(rawConstituent, [candidate]);
+    bundlePort.judgmentsByCandidate.set(placeholder.number, {
+      same_bug: 'yes',
+      rationale: 'The candidate explicitly lists the timezone dropdown resetting to UTC on saving other settings.',
+    });
+
+    const constituentEnvelope = await new PipelineService(bundlePort).processReport(rawConstituent);
+
+    // Must NOT silently merge as a comment on the placeholder.
+    expect(constituentEnvelope.outcome).not.toBe('duplicate_commented');
+    expect(constituentEnvelope.duplicate_verdict?.tier).not.toBe('clear_duplicate');
+    expect(constituentEnvelope.duplicate_verdict?.tier).toBe('possible_duplicate');
+    expect(constituentEnvelope.duplicate_verdict?.target_issue).toBe(placeholder.number);
+    // Gets its own issue, cross-linked to the placeholder, not just a comment.
+    expect(bundlePort.calls.filter((c) => c.op === 'create_issue')).toHaveLength(2);
   });
 });

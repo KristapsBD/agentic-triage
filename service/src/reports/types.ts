@@ -40,6 +40,7 @@ export interface DuplicateCandidate {
   title: string;
   body: string;
   similarity: number;
+  labels: string[];
 }
 
 export interface DuplicateJudgment {

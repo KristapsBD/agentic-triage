@@ -20,6 +20,7 @@
  * only surfaces the result of a successful attempt, not per-attempt usage).
  */
 
+import { NEEDS_INFO, NEEDS_TRIAGE } from '../gitea/labels';
 import { hashReport } from './pipeline-body';
 import { PipelineUnavailableError } from './pipeline.errors';
 import { redactSecrets } from './redaction';
@@ -28,6 +29,20 @@ import { TriagePort } from './triage-port.interface';
 import { DuplicateCandidate, DuplicateCandidateConsidered, DuplicateJudgment, DuplicateVerdict, LlmCallUsage, StageTiming } from './types';
 
 const NOT_A_DUPLICATE: DuplicateVerdict = { tier: 'not_a_duplicate', target_issue: null, similarity: null, rationale: '' };
+
+/**
+ * `needs-triage`/`needs-info` issues are this service's own Review Flag
+ * placeholders (routeBundled et al.), not triaged bugs — a "yes" match
+ * against one just means the candidate mentions the report as one of
+ * several bundled items, not that it's the same tracked bug. Treating that
+ * as clear_duplicate silently merges a distinct, well-specified report into
+ * an un-split bundle with no issue, severity, or component labels of its
+ * own. Demote to possible_duplicate so it still gets cross-linked but also
+ * gets a real issue (ADR-0005's three-tier design exists for exactly this).
+ */
+function isReviewFlagPlaceholder(candidate: DuplicateCandidate): boolean {
+  return candidate.labels.includes(NEEDS_TRIAGE) || candidate.labels.includes(NEEDS_INFO);
+}
 
 export interface DuplicateDetectionResult {
   verdict: DuplicateVerdict;
@@ -86,7 +101,9 @@ export async function findDuplicateVerdict(
     candidatesConsidered.push({ issue_number: candidate.issue_number, similarity: candidate.similarity, same_bug: judgment.same_bug });
     tokenUsage.push({ call: 'duplicate_judgment', candidate_issue_number: candidate.issue_number, ...usage });
 
-    if (judgment.same_bug === 'yes' && bestYes === null) {
+    if (judgment.same_bug === 'yes' && isReviewFlagPlaceholder(candidate)) {
+      if (bestPossibly === null) bestPossibly = [candidate, judgment];
+    } else if (judgment.same_bug === 'yes' && bestYes === null) {
       bestYes = [candidate, judgment];
     } else if (judgment.same_bug === 'possibly' && bestPossibly === null) {
       bestPossibly = [candidate, judgment];

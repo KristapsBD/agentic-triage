@@ -83,7 +83,7 @@ describe('PipelineService idempotency', () => {
     const raw = 'dup report';
     const port = new FakeTriagePort();
     port.extractionQueue = [bugDecision()];
-    port.candidatesByReport.set(raw, [{ issue_number: 101, title: 'existing', body: 'b', similarity: 0.9 }]);
+    port.candidatesByReport.set(raw, [{ issue_number: 101, title: 'existing', body: 'b', similarity: 0.9, labels: [] }]);
     port.judgmentsByCandidate.set(101, { same_bug: 'yes', rationale: 'same crash' });
     port.commentShouldFail = true;
 
@@ -151,7 +151,7 @@ describe('PipelineService idempotency', () => {
     const raw = 'flaky end to end';
     const port = new FakeTriagePort();
     port.extractionQueue = [new TransientAPIError('boom'), bugDecision()];
-    port.candidatesByReport.set(raw, [{ issue_number: 1, title: 'existing', body: '...', similarity: 0.8 }]);
+    port.candidatesByReport.set(raw, [{ issue_number: 1, title: 'existing', body: '...', similarity: 0.8, labels: [] }]);
     port.judgeDuplicateQueueByCandidate.set(1, [new TransientAPIError('boom'), { same_bug: 'no', rationale: 'different' }]);
 
     await new PipelineService(port).processReport(raw);

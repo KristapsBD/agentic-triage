@@ -147,7 +147,7 @@ describe('PipelineService (Ticket #38: Confidence)', () => {
     const raw = 'looks kind of like an existing bug';
     const port = new FakeTriagePort();
     port.extractionQueue = [bugDecision()];
-    port.candidatesByReport.set(raw, [{ issue_number: 1, title: 'existing', body: '...', similarity: 0.6 }]);
+    port.candidatesByReport.set(raw, [{ issue_number: 1, title: 'existing', body: '...', similarity: 0.6, labels: [] }]);
     port.judgmentsByCandidate.set(1, { same_bug: 'possibly', rationale: 'similar area' });
 
     const envelope = await new PipelineService(port).processReport(raw);

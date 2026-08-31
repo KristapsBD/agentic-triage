@@ -59,7 +59,7 @@ export class EmbeddingIndex {
       const issueVec = await this.embed(`${issue.title}\n${issue.body}`);
       const similarity = dot(reportVec, issueVec);
       if (similarity >= this.settings.duplicate_similarity_floor) {
-        scored.push({ issue_number: issue.number, title: issue.title, body: issue.body, similarity });
+        scored.push({ issue_number: issue.number, title: issue.title, body: issue.body, similarity, labels: issue.labels });
       }
     }
     scored.sort((a, b) => b.similarity - a.similarity);

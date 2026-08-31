@@ -45,6 +45,7 @@ describe('PipelineService (duplicate detection)', () => {
       title: 'Login button unresponsive on mobile Safari',
       body: '...',
       similarity: 0.9,
+      labels: [],
     };
     port.candidatesByReport.set(raw, [candidate]);
     port.judgmentsByCandidate.set(1, { same_bug: 'yes', rationale: 'same symptom, same platform' });
@@ -73,6 +74,7 @@ describe('PipelineService (duplicate detection)', () => {
       title: 'Login button unresponsive on mobile Safari',
       body: 'the button does nothing when tapped',
       similarity: 0.5,
+      labels: [],
     };
     port.candidatesByReport.set(raw, [candidate]);
     port.judgmentsByCandidate.set(1, {
@@ -91,7 +93,7 @@ describe('PipelineService (duplicate detection)', () => {
     const raw = "same crash as before, rotating my key didn't help either";
     const port = new FakeTriagePort();
     port.extractionQueue = [bugDecision()];
-    const candidate: DuplicateCandidate = { issue_number: 1, title: 'Login button unresponsive', body: '...', similarity: 0.9 };
+    const candidate: DuplicateCandidate = { issue_number: 1, title: 'Login button unresponsive', body: '...', similarity: 0.9, labels: [] };
     port.candidatesByReport.set(raw, [candidate]);
     const judgment: DuplicateJudgment = {
       same_bug: 'yes',
@@ -110,7 +112,7 @@ describe('PipelineService (duplicate detection)', () => {
     const raw = 'login seems flaky on some phones';
     const port = new FakeTriagePort();
     port.extractionQueue = [bugDecision()];
-    const candidate: DuplicateCandidate = { issue_number: 1, title: 'Login button unresponsive', body: '...', similarity: 0.6 };
+    const candidate: DuplicateCandidate = { issue_number: 1, title: 'Login button unresponsive', body: '...', similarity: 0.6, labels: [] };
     port.candidatesByReport.set(raw, [candidate]);
     port.judgmentsByCandidate.set(1, { same_bug: 'possibly', rationale: 'similar area, unclear if same root cause' });
 
@@ -131,9 +133,9 @@ describe('PipelineService (duplicate detection)', () => {
     const port = new FakeTriagePort();
     port.extractionQueue = [bugDecision()];
     const candidates: DuplicateCandidate[] = [
-      { issue_number: 1, title: 'unrelated', body: '...', similarity: 0.4 },
-      { issue_number: 2, title: 'skipped', body: '...', similarity: 0.5 },
-      { issue_number: 3, title: 'the winner', body: '...', similarity: 0.9 },
+      { issue_number: 1, title: 'unrelated', body: '...', similarity: 0.4, labels: [] },
+      { issue_number: 2, title: 'skipped', body: '...', similarity: 0.5, labels: [] },
+      { issue_number: 3, title: 'the winner', body: '...', similarity: 0.9, labels: [] },
     ];
     port.candidatesByReport.set(raw, candidates);
     port.judgmentsByCandidate.set(1, { same_bug: 'no', rationale: 'different area' });

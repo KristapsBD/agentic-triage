@@ -50,7 +50,7 @@ describe('PipelineService telemetry wiring', () => {
     const raw = 'ambiguous match';
     const port = new FakeTriagePort();
     port.extractionQueue = [decision()];
-    port.candidatesByReport.set(raw, [{ issue_number: 1, title: 'existing', body: '...', similarity: 0.8 }]);
+    port.candidatesByReport.set(raw, [{ issue_number: 1, title: 'existing', body: '...', similarity: 0.8, labels: [] }]);
     port.judgeDuplicateQueueByCandidate.set(1, [
       new ExtractionValidationError('bad 1'),
       new ExtractionValidationError('bad 2'),

@@ -94,7 +94,7 @@ describe('PipelineService retry budgets', () => {
     const raw = 'looks like an existing bug';
     const port = new FakeTriagePort();
     port.extractionQueue = [decision()];
-    port.candidatesByReport.set(raw, [{ issue_number: 1, title: 'existing', body: '...', similarity: 0.8 }]);
+    port.candidatesByReport.set(raw, [{ issue_number: 1, title: 'existing', body: '...', similarity: 0.8, labels: [] }]);
     port.judgeDuplicateQueueByCandidate.set(1, [
       new ExtractionValidationError('same_bug: invalid enum value'),
       { same_bug: 'yes', rationale: 'same root cause' },
@@ -113,7 +113,7 @@ describe('PipelineService retry budgets', () => {
     const raw = 'ambiguous match';
     const port = new FakeTriagePort();
     port.extractionQueue = [decision()];
-    port.candidatesByReport.set(raw, [{ issue_number: 1, title: 'existing', body: '...', similarity: 0.8 }]);
+    port.candidatesByReport.set(raw, [{ issue_number: 1, title: 'existing', body: '...', similarity: 0.8, labels: [] }]);
     port.judgeDuplicateQueueByCandidate.set(1, [
       new ExtractionValidationError('bad 1'),
       new ExtractionValidationError('bad 2'),
@@ -130,7 +130,7 @@ describe('PipelineService retry budgets', () => {
     const raw = 'ambiguous match';
     const port = new FakeTriagePort();
     port.extractionQueue = [decision()];
-    port.candidatesByReport.set(raw, [{ issue_number: 1, title: 'existing', body: '...', similarity: 0.8 }]);
+    port.candidatesByReport.set(raw, [{ issue_number: 1, title: 'existing', body: '...', similarity: 0.8, labels: [] }]);
     port.judgeDuplicateQueueByCandidate.set(1, [
       new ExtractionValidationError('bad 1'),
       new ExtractionValidationError('bad 2'),
@@ -149,7 +149,7 @@ describe('PipelineService retry budgets', () => {
     const raw = 'flaky infra during dedup';
     const port = new FakeTriagePort();
     port.extractionQueue = [decision()];
-    port.candidatesByReport.set(raw, [{ issue_number: 1, title: 'existing', body: '...', similarity: 0.8 }]);
+    port.candidatesByReport.set(raw, [{ issue_number: 1, title: 'existing', body: '...', similarity: 0.8, labels: [] }]);
     port.judgeDuplicateQueueByCandidate.set(
       1,
       Array.from({ length: SETTINGS.transient_retry_budget + 1 }, () => new TransientAPIError('boom')),
