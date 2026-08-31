@@ -68,12 +68,12 @@ eval: ## Run the eval harness (threshold regression + Set B + Set C) against the
 eval-set-d: ## Run the standalone Set D anchor suite (Set A baseline only, not part of `make eval`/preflight)
 	docker compose run --rm -e TRIAGE_SERVICE_URL=http://triage-service:8000 triage-service npm run eval:set-d
 
-reset-demo: ## Reset just the demo target's Decision Record store (delete acme-app in Gitea's UI first, see service/README.md)
+reset-demo: ## Reset just the demo target's Decision Record store (delete acme-app in Gitea's UI first, see README.md)
 	docker compose down triage-service
 	docker volume rm agentic-sdw_triage-decisions
 	docker compose up -d --build triage-service
 
-fresh-start: ## Full demo reset to a clean slate (see service/README.md "Fresh start")
+fresh-start: ## Full demo reset to a clean slate (see README.md "Fresh start")
 	./delete-demo-repo.sh
 	./bootstrap.sh
 	docker compose run --rm triage-service npm run seed:set-a
@@ -84,7 +84,7 @@ fresh-start: ## Full demo reset to a clean slate (see service/README.md "Fresh s
 	docker volume rm agentic-sdw_prometheus-data agentic-sdw_grafana-data agentic-sdw_loki-data
 	docker compose up -d --build prometheus grafana loki
 
-clean-volumes: ## Remove ALL containers and volumes, including Gitea's own data (bug-triage repo included) — full reset from zero, see service/README.md "Fresh start"
+clean-volumes: ## Remove ALL containers and volumes, including Gitea's own data (bug-triage repo included) — full reset from zero, see README.md "Fresh start"
 	docker compose down -v
 
 # ---- Tests / linters ------------------------------------------------------

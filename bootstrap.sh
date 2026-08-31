@@ -11,7 +11,7 @@
 # one is a one-time setup for hosting this project's own code/issues,
 # separate from resetting the demo. Keeping them apart means the triage
 # service's own build/planning tickets can never leak into its
-# duplicate-detection candidate pool. See service/README.md.
+# duplicate-detection candidate pool. See README.md.
 #
 # Usage: ./bootstrap.sh
 set -euo pipefail

@@ -25,10 +25,9 @@ Running more than one agent against this repo at once — concurrent sessions or
 The brief's delivery is a `git bundle` + email, so PR descriptions/comments
 (which live in Gitea's database, not git) are dead on arrival for an
 evaluator. `docs/what-the-agent-got-wrong.md` carries that narrative in a
-tracked file instead; the root `README.md` points to it and to
-`service/README.md`. Update `docs/what-the-agent-got-wrong.md` (not just a
-Gitea PR description) when a change is significant enough to belong in the
-disclosure story.
+tracked file instead; the root `README.md` points to it. Update
+`docs/what-the-agent-got-wrong.md` (not just a Gitea PR description) when a
+change is significant enough to belong in the disclosure story.
 
 ### Observability stack (Prometheus/Grafana/Loki)
 

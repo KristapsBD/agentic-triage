@@ -102,7 +102,7 @@ wins and the other waits for the winner's result rather than repeating the
 work. The remaining, narrower case — two *differently-worded* near-
 simultaneous reports of the same new bug both listing open issues before
 either has filed — can't be closed by a report-hash-keyed guard and is
-disclosed in `service/README.md`'s rough edges instead of silently left
+disclosed in `README.md`'s rough edges instead of silently left
 undocumented.
 
 Each of these is exactly the kind of mistake the brief says it's screening
@@ -166,7 +166,7 @@ decision.
   `unclear`, and bundled paths call `findDuplicateVerdict`. Ten users asking
   for the same feature produce ten open issues. Defensible under the
   brief's letter (dedup is framed around bug reports) and the asymmetry is
-  now documented in `service/README.md` as a deliberate scope choice, but it
+  now documented in `README.md` as a deliberate scope choice, but it
   wasn't closed.
 - **`unknown` can be applied to components alongside a real label**
   (`components: ['backend', 'unknown']`), which makes `label:unknown`

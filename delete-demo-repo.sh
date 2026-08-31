@@ -2,11 +2,11 @@
 # Deletes the triage service's demo TARGET repo (default "acme-app") via
 # Gitea's REST API, as part of `make fresh-start`. This replaces the old
 # manual "click through Danger Zone in Gitea's UI" step from
-# service/README.md's "Fresh start" section.
+# README.md's "Fresh start" section.
 #
 # Hard safety requirement: this script must be structurally incapable of
 # ever deleting "bug-triage" (this codebase's own Gitea project + issue
-# tracker, see service/README.md). To that end:
+# tracker, see README.md). To that end:
 #   - The repo owner/name come ONLY from GITEA_REPO_OWNER/GITEA_REPO_NAME
 #     in .env, the same vars bootstrap.sh and the service already use.
 #     There is no flag/argument to override them at call time.
