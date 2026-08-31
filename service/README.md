@@ -202,9 +202,13 @@ POST /reports
 Returns one envelope shape for every outcome (`issue_created`,
 `duplicate_commented`, `review_flagged`, `feature_request_filed`,
 `dropped_spam`) — all `2xx`. A `502` with `{error_code, report_hash}` means
-the pipeline itself couldn't complete (LLM or Gitea unavailable after
-retries); the identical POST is safe to retry. A `400` means the input was
-empty/whitespace-only — the only rejection that happens before the pipeline.
+the pipeline itself couldn't complete (LLM or Gitea transiently unavailable
+after retries — network error or a Gitea 5xx); the identical POST is safe
+to retry. A `500` with the same shape means Gitea permanently rejected the
+request (a Gitea 4xx — bad token, deleted repo, an oversized title); retrying
+the identical POST will not help, the underlying config/state needs fixing
+first. A `400` means the input was empty/whitespace-only — the only
+rejection that happens before the pipeline.
 
 ## Architecture / the seam
 

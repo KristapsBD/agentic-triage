@@ -49,10 +49,10 @@ export class GiteaClient {
       throw new GiteaError(`Gitea request failed: ${(err as Error).message}`);
     }
     if (response.status >= 500) {
-      throw new GiteaError(`Gitea returned ${response.status}: ${(await response.text()).slice(0, 300)}`);
+      throw new GiteaError(`Gitea returned ${response.status}: ${(await response.text()).slice(0, 300)}`, response.status);
     }
     if (response.status >= 400) {
-      throw new GiteaError(`Gitea rejected request (${response.status}): ${(await response.text()).slice(0, 300)}`);
+      throw new GiteaError(`Gitea rejected request (${response.status}): ${(await response.text()).slice(0, 300)}`, response.status);
     }
     return response;
   }

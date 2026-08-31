@@ -31,6 +31,9 @@ export class FakeTriagePort implements TriagePort {
   judgeDuplicateQueueByCandidate = new Map<number, Array<DuplicateJudgment | Error>>();
   judgeDuplicateUsageByCandidate = new Map<number, TokenUsage[]>();
   createIssueShouldFail = false;
+  // F11: undefined (network-error-shaped, retryable) unless a test wants to
+  // simulate a permanent Gitea rejection (e.g. 404/403) instead.
+  createIssueFailureStatus: number | undefined = undefined;
   commentShouldFail = false;
 
   private records = new Map<string, DecisionRecord>();
@@ -39,7 +42,7 @@ export class FakeTriagePort implements TriagePort {
   async createIssue(title: string, body: string, labels: string[]): Promise<number> {
     this.calls.push({ op: 'create_issue', args: [title, body, [...labels]] });
     if (this.createIssueShouldFail) {
-      throw new GiteaError('simulated Gitea outage');
+      throw new GiteaError('simulated Gitea outage', this.createIssueFailureStatus);
     }
     this.issueCounter += 1;
     this.openIssues.push({ number: this.issueCounter, title, body, labels: [...labels], state: 'open' });

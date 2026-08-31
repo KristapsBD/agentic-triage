@@ -21,3 +21,19 @@ export class PipelineUnavailableError extends Error {
     super(message || errorCode);
   }
 }
+
+/**
+ * F11: Gitea permanently rejected the request (4xx -- bad token, deleted
+ * repo, an oversized title). Distinct from PipelineUnavailableError:
+ * retrying the identical POST will never succeed, so it must NOT carry the
+ * "safe to retry" 502 contract. Maps to 500 (pipeline-exception.filter.ts).
+ */
+export class PipelineRejectedError extends Error {
+  constructor(
+    public readonly reportHash: string,
+    public readonly errorCode: string,
+    message = '',
+  ) {
+    super(message || errorCode);
+  }
+}

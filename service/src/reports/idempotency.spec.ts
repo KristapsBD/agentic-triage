@@ -2,7 +2,7 @@
 
 import { hashReport } from './pipeline-body';
 import { PipelineService } from './pipeline.service';
-import { PipelineUnavailableError } from './pipeline.errors';
+import { PipelineRejectedError, PipelineUnavailableError } from './pipeline.errors';
 import { FakeTriagePort } from './testing/fake-triage-port';
 import { ExtractionValidationError, TransientAPIError } from './pipeline.errors';
 import { TriageDecision } from './types';
@@ -67,6 +67,21 @@ describe('PipelineService idempotency', () => {
 
     expect(envelope.outcome).toBe('issue_created');
     expect(port.calls.filter((c) => c.op === 'extract').length).toBe(1);
+  });
+
+  // F11 (scout-hire-audit-opus): a permanent Gitea rejection (bad token,
+  // deleted repo, oversized title -- a 4xx) must not carry the "safe to
+  // retry" gitea_unavailable/502 contract, since retrying an identical
+  // request will never succeed against a config/state problem.
+  it('does not surface a permanent (4xx) Gitea rejection as the retry-safe gitea_unavailable error', async () => {
+    const raw = 'some report';
+    const port = new FakeTriagePort();
+    port.extractionQueue = [bugDecision()];
+    port.createIssueShouldFail = true;
+    port.createIssueFailureStatus = 404;
+
+    await expect(new PipelineService(port).processReport(raw)).rejects.toThrow(PipelineRejectedError);
+    await expect(new PipelineService(port).processReport(raw)).rejects.not.toThrow(PipelineUnavailableError);
   });
 
   it('carries the report hash on a PipelineUnavailableError for safe retry', async () => {

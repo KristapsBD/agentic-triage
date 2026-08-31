@@ -52,7 +52,7 @@ import {
   issueBody,
   reviewFlagBody,
 } from './pipeline-body';
-import { PipelineUnavailableError } from './pipeline.errors';
+import { PipelineRejectedError, PipelineUnavailableError } from './pipeline.errors';
 import { redactSecrets } from './redaction';
 import { RetryBudgets, withRetryBudgets } from './retry';
 import { isBundled } from './schemas';
@@ -403,6 +403,9 @@ export class PipelineService {
         record.status = 'gitea_call_failed';
         record.error = e.message;
         await this.save(record);
+        if (!e.retryable) {
+          throw new PipelineRejectedError(record.report_hash, 'gitea_rejected', e.message);
+        }
         throw new PipelineUnavailableError(record.report_hash, 'gitea_unavailable', e.message);
       }
       throw e;
