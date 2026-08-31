@@ -38,4 +38,10 @@ export interface TriagePort {
   // --- Decision Record persistence ---
   saveDecisionRecord(record: DecisionRecord): Promise<void>;
   getDecisionRecord(reportHash: string): Promise<DecisionRecord | null>;
+  // Atomic insert-or-bail (F3 audit finding): unlike saveDecisionRecord's
+  // plain upsert, this creates the record only if no row for this
+  // report_hash exists yet, and reports whether it won that race -- the
+  // seam that lets processReport's initial claim be a single atomic
+  // operation instead of a read-then-write with an await in between.
+  claimDecisionRecord(record: DecisionRecord): Promise<boolean>;
 }

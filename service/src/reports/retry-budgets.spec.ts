@@ -1,13 +1,17 @@
 /** Ticket #31: validation vs transient retry budgets, independent (ADR-0008). Mirrors tests/test_retry_budgets.py. */
 
-import { PipelineService } from './pipeline.service';
+import { PipelineService, PipelineSettings } from './pipeline.service';
 import { PipelineUnavailableError, ExtractionValidationError, TransientAPIError } from './pipeline.errors';
 import { FakeTriagePort } from './testing/fake-triage-port';
-import { RetryBudgets } from './retry';
 import { TriageDecision } from './types';
 import { FakeTelemetryRecorder } from '../telemetry/testing/fake-telemetry-recorder';
 
-const SETTINGS: RetryBudgets = { validation_retry_budget: 2, transient_retry_budget: 3, transient_retry_backoff_seconds: 0 };
+const SETTINGS: PipelineSettings = {
+  validation_retry_budget: 2,
+  transient_retry_budget: 3,
+  transient_retry_backoff_seconds: 0,
+  duplicate_similarity_floor: 0.35,
+};
 
 function decision(): TriageDecision {
   return {

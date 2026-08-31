@@ -237,7 +237,7 @@ business logic — every provider below is a plain, directly-testable class.
   real `TriagePort`, the TS equivalent of the old `real_port.py`
   composition.
 - `src/reports/testing/fake-triage-port.ts` — one fake implementation of the
-  same port, driving every orchestration test (`src/**/*.spec.ts`, 77
+  same port, driving every orchestration test (`src/**/*.spec.ts`, 126
   tests) with zero network calls. This is where every ADR's routing logic
   gets its coverage.
 
@@ -257,7 +257,7 @@ or inside the already-built image:
 docker compose run --rm triage-service npm test
 ```
 
-113 tests across 23 suites, covering the orchestration logic against
+126 tests across 25 suites, covering the orchestration logic against
 `FakeTriagePort` — happy path, report-type routing, duplicate detection
 (incl. the false-merge near-miss), retry budgets, unified Review Flags +
 bundling, idempotency, the HTTP response contract, and the Zod schema's
@@ -280,7 +280,7 @@ service's address on the compose network, not `localhost`. `npm run eval`
 also runs the duplicate-similarity threshold regression check and Set C —
 see `npm run eval:set-b` / `eval:set-c` to run either alone.)
 
-`npm run eval:set-d` / `make eval-set-d` is a separate two-case anchor
+`npm run eval:set-d` / `make eval-set-d` is a separate nine-case anchor
 suite that only needs Set A seeded — no Set B/C run required first — so it
 works right after `make fresh-start && make seed` alone. It's deliberately
 excluded from `npm run eval` / `make eval` / `npm run preflight`: a Set D
@@ -314,3 +314,18 @@ thing from the repo root.
 - Model choice (`ANTHROPIC_MODEL`, default `claude-sonnet-5`) is the same
   for extraction and duplicate judgment, per the spec's deliberate
   deferral of cost-optimized model selection.
+- Duplicate detection only runs on `bug`/`unclear`/bundled paths, never on
+  `feature_request` — deliberate (dedup exists to avoid false-merging two
+  reports of the same defect; two independent feature requests for the same
+  thing are a weaker signal to auto-collapse), not an oversight, but it does
+  mean ten paraphrased "please add PDF export" reports currently produce ten
+  open `feature-request` issues.
+- The Decision Record's idempotency guard (`DecisionStore.tryClaim`, an
+  atomic insert-or-bail) closes the race for two concurrent POSTs of the
+  *identical* Raw Report — only one runs the LLM/Gitea work, the other waits
+  on the winner. It does **not** close the inherent dedup TOCTOU: two
+  near-simultaneous *differently-worded* reports of the same new bug both
+  list open issues before either has filed, so both can still file. No
+  report-hash-independent lock covers that window; it would need locking
+  around the whole duplicate-check-then-file sequence, not just the Decision
+  Record write.

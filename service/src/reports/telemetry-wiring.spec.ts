@@ -6,13 +6,17 @@
  */
 
 import { ExtractionValidationError } from './pipeline.errors';
-import { PipelineService } from './pipeline.service';
-import { RetryBudgets } from './retry';
+import { PipelineService, PipelineSettings } from './pipeline.service';
 import { FakeTriagePort } from './testing/fake-triage-port';
 import { TriageDecision } from './types';
 import { FakeTelemetryRecorder } from '../telemetry/testing/fake-telemetry-recorder';
 
-const SETTINGS: RetryBudgets = { validation_retry_budget: 2, transient_retry_budget: 3, transient_retry_backoff_seconds: 0 };
+const SETTINGS: PipelineSettings = {
+  validation_retry_budget: 2,
+  transient_retry_budget: 3,
+  transient_retry_backoff_seconds: 0,
+  duplicate_similarity_floor: 0.35,
+};
 
 function decision(): TriageDecision {
   return {

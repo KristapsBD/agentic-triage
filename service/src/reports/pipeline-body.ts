@@ -45,7 +45,7 @@ export function issueBody(rawReport: string, rationale: string, extra = ''): str
 export function bugIssueBody(rawReport: string, decision: TriageDecision): string {
   const steps =
     decision.repro_steps && decision.repro_steps.length > 0
-      ? decision.repro_steps.map((step, i) => `${i + 1}. ${step}`).join('\n')
+      ? decision.repro_steps.map((step, i) => `${i + 1}. ${redactSecrets(step)}`).join('\n')
       : 'No reproduction steps provided.';
   // supporting_evidence is explicitly specified (llm-client.ts's SYSTEM_PROMPT)
   // to carry pasted logs/stack traces verbatim -- a second channel for a
@@ -80,4 +80,22 @@ export function duplicateCommentBody(rawReport: string, rationale: string): stri
 export function duplicateCrossLinkNote(verdict: DuplicateVerdict): string {
   if (verdict.tier === 'not_a_duplicate') return '';
   return `### Possibly related to an existing issue\n\nSee #${verdict.target_issue} (${verdict.rationale}).`;
+}
+
+/**
+ * F8 audit observation: a Review Flagged issue (unclear/possible-duplicate)
+ * gets only the needs-triage/needs-info workflow labels -- the extracted
+ * severity/components are computed and persisted in the Decision Record but
+ * never surface anywhere a human reviewer looks. Surfaced here as an
+ * unconfirmed suggestion in the body text, not as applied labels -- the
+ * design deliberately withholds labels the pipeline isn't confident enough
+ * in to apply automatically (ADR-0006).
+ */
+export function suggestedFieldsNote(decision: Pick<TriageDecision, 'severity' | 'components'>): string {
+  const hasComponents = decision.components.length > 0;
+  if (decision.severity === null && !hasComponents) return '';
+  const lines: string[] = [];
+  if (decision.severity !== null) lines.push(`**Suggested severity:** ${decision.severity}`);
+  if (hasComponents) lines.push(`**Suggested components:** ${decision.components.join(', ')}`);
+  return `### Extracted, unconfirmed\n\n${lines.join('\n')}`;
 }

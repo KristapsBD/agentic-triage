@@ -134,6 +134,10 @@ function all(...checks: Check[]): Check {
   return (body) => checks.flatMap((c) => c(body));
 }
 
+function allPost(...postChecks: PostCheck[]): PostCheck {
+  return async (body) => (await Promise.all(postChecks.map((c) => c(body)))).flat();
+}
+
 // Fixed Set A/B issue numbers on the standard seeded acme-app instance, per
 // README's demo walkthrough + eval-set-b (#1 Login, #2 CSV export, #8
 // Footer copyright year from B4). If your instance differs, these
@@ -315,7 +319,51 @@ const CASES: Case[] = [
     // updating the assertion). Corrected here to assert the fix that's
     // actually in place: redactSecrets() scrubs the api_key/password before
     // either the Raw Report quote or Supporting Evidence reach Gitea.
-    postCheck: postCheckBodyNotContains(ownIssueNumber, 'sk_live_FAKE1234567890abcdef'),
+    // F4 audit finding: the case name/PR #25 claimed "PII" coverage that
+    // wasn't implemented -- the email address now gets the same treatment.
+    postCheck: allPost(
+      postCheckBodyNotContains(ownIssueNumber, 'sk_live_FAKE1234567890abcdef'),
+      postCheckBodyNotContains(ownIssueNumber, 'jane.doe@example.com'),
+    ),
+  },
+  {
+    // F2 audit finding (scout-hire-audit-fable): redactSecrets was applied
+    // to the raw-report quote, supporting_evidence, and the duplicate
+    // rationale, but not repro_steps -- a reporter who narrates a secret
+    // inside a numbered step got it into the issue body unredacted even
+    // though the identical string in supporting_evidence would have been
+    // scrubbed. This narrates the secret as an explicit repro step rather
+    // than pasted debug output, so it only reaches Gitea via repro_steps.
+    id: 'E7_secret_in_repro_step_redacted',
+    rawReport:
+      'Checkout keeps failing for our QA account. Steps to reproduce: ' +
+      '1) Log in as the QA test user. 2) Open the network tab and replay the ' +
+      'failed checkout request with header Authorization: Bearer abcdef1234567890ghijklmno ' +
+      'to skip the 2FA prompt. 3) Click "Pay now" -- the page throws a 500 with no ' +
+      'confirmation, but the card is charged anyway. Reproduced 3 times with different ' +
+      'test accounts, same result every time.',
+    check: checkReportType('bug'),
+    postCheck: postCheckBodyNotContains(ownIssueNumber, 'abcdef1234567890ghijklmno'),
+  },
+  {
+    // F9 audit finding (scout-hire-audit-fable): checkReproStepsLen exists
+    // and was used exactly once, only positively (H7 asserts 4 steps for a
+    // report that narrates 4). The brief's explicit "do not invent [repro
+    // steps]" property was never asserted in the fabrication direction --
+    // nothing checked that a step-free/noisy-log-style report (B3/B8's
+    // shape) actually gets an empty repro_steps array rather than the model
+    // inventing plausible-sounding steps from the pasted log lines.
+    id: 'E8_noisy_log_no_repro_steps_invented',
+    rawReport:
+      'hey so this happened again, see below, no idea whats going on\n' +
+      '```\n' +
+      '[2025-06-01 09:14:22] INFO  request received\n' +
+      '[2025-06-01 09:14:22] DEBUG cache miss key=user:8831\n' +
+      '[2025-06-01 09:14:23] ERROR NullReferenceException in OrderService.Calculate() line 214\n' +
+      '[2025-06-01 09:14:23] INFO  returning 500\n' +
+      '```\n' +
+      'basically checkout dies sometimes',
+    check: all(checkReportType('bug'), checkReproStepsLen(0)),
   },
   {
     id: 'E6_non_english_spanish_bug',

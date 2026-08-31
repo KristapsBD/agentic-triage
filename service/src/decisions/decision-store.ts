@@ -27,6 +27,23 @@ export class DecisionStore {
     this.db.exec(SCHEMA);
   }
 
+  /**
+   * Atomic insert-or-bail (F3 audit finding: processReport's prior
+   * get-then-save had an await point between the read and the write, so two
+   * concurrent identical POSTs could both observe no existing record and
+   * both proceed to do the LLM/Gitea work). better-sqlite3 statements run
+   * synchronously, and this whole method contains no `await`, so within
+   * this single Node process no other request's code can interleave between
+   * the check and the insert -- returns whether this call actually created
+   * the row.
+   */
+  tryClaim(record: DecisionRecord): boolean {
+    const result = this.db
+      .prepare('INSERT OR IGNORE INTO decision_records (report_hash, payload) VALUES (?, ?)')
+      .run(record.report_hash, JSON.stringify(record));
+    return result.changes > 0;
+  }
+
   save(record: DecisionRecord): void {
     this.db
       .prepare(

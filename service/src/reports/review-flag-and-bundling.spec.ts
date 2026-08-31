@@ -143,4 +143,51 @@ describe('PipelineService (Review Flag unification + Bundled Report handling)', 
     expect(bodyA.toLowerCase()).toContain('why this needs review');
     expect(bodyB.toLowerCase()).toContain('why this needs review');
   });
+
+  // F8 audit observation: possible-duplicate/unclear issues got only
+  // needs-triage/needs-info labels -- the extracted severity/components
+  // were computed and persisted but never surfaced anywhere a human
+  // reviewer looks. Surfaced as an unconfirmed suggestion in the body, not
+  // as an applied label.
+  it('surfaces extracted severity/components as an unconfirmed suggestion on a possible-duplicate issue', async () => {
+    const raw = 'possible dup with extracted fields';
+    const port = new FakeTriagePort();
+    port.extractionQueue = [decision({ severity: 'high', components: ['backend', 'api'] })];
+    const candidate: DuplicateCandidate = { issue_number: 1, title: 'x', body: 'y', similarity: 0.6 };
+    port.candidatesByReport.set(raw, [candidate]);
+    port.judgmentsByCandidate.set(1, { same_bug: 'possibly', rationale: 'r' } as DuplicateJudgment);
+
+    await new PipelineService(port).processReport(raw);
+
+    const body = port.calls.find((c) => c.op === 'create_issue')!.args[1] as string;
+    expect(body).toContain('Suggested severity:** high');
+    expect(body).toContain('Suggested components:** backend, api');
+    // never applied as an actual Gitea label, only mentioned in the body
+    const labels = port.calls.find((c) => c.op === 'create_issue')!.args[2] as string[];
+    expect(labels).not.toContain('high');
+    expect(labels).not.toContain('backend');
+  });
+
+  it('surfaces extracted severity/components as an unconfirmed suggestion on an unclear issue', async () => {
+    const raw = 'unclear report with extracted fields';
+    const port = new FakeTriagePort();
+    port.extractionQueue = [decision({ report_type: 'unclear', severity: 'medium', components: ['frontend'] })];
+
+    await new PipelineService(port).processReport(raw);
+
+    const body = port.calls.find((c) => c.op === 'create_issue')!.args[1] as string;
+    expect(body).toContain('Suggested severity:** medium');
+    expect(body).toContain('Suggested components:** frontend');
+  });
+
+  it('omits the suggestion section entirely when nothing was extracted', async () => {
+    const raw = 'the reports thing is broken again pls fix';
+    const port = new FakeTriagePort();
+    port.extractionQueue = [decision({ title: 't', report_type: 'unclear' })];
+
+    await new PipelineService(port).processReport(raw);
+
+    const body = port.calls.find((c) => c.op === 'create_issue')!.args[1] as string;
+    expect(body).not.toContain('Extracted, unconfirmed');
+  });
 });
