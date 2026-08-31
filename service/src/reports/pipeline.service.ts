@@ -53,6 +53,7 @@ import {
   reviewFlagBody,
 } from './pipeline-body';
 import { PipelineUnavailableError } from './pipeline.errors';
+import { redactSecrets } from './redaction';
 import { RetryBudgets, withRetryBudgets } from './retry';
 import { isBundled } from './schemas';
 import { NoopTelemetryRecorder } from '../telemetry/noop-telemetry-recorder';
@@ -243,8 +244,8 @@ export class PipelineService {
         duplicateSimilarity: null,
         reviewFlagged: false,
       });
-      const body = issueBody(rawReport, `**Report Type:** feature_request\n\n${decision.title}`);
-      const action: PendingAction = { type: 'create_issue', title: decision.title, body, labels: [FEATURE_REQUEST], target_issue: null };
+      const body = issueBody(rawReport, `**Report Type:** feature_request\n\n${redactSecrets(decision.title)}`);
+      const action: PendingAction = { type: 'create_issue', title: redactSecrets(decision.title), body, labels: [FEATURE_REQUEST], target_issue: null };
       return { action, outcome: 'feature_request_filed', verdict: null, confidence, ...NO_EVIDENCE };
     }
 
@@ -258,7 +259,7 @@ export class PipelineService {
         reviewFlagged: true,
       });
       const body = reviewFlagBody(rawReport, UNCLEAR_REASON, confidence, duplicateCrossLinkNote(detection.verdict));
-      const action: PendingAction = { type: 'create_issue', title: decision.title, body, labels: [NEEDS_INFO], target_issue: null };
+      const action: PendingAction = { type: 'create_issue', title: redactSecrets(decision.title), body, labels: [NEEDS_INFO], target_issue: null };
       return {
         action,
         outcome: 'review_flagged',
@@ -315,7 +316,7 @@ export class PipelineService {
         `auto-comment bar (${verdict.rationale}). Filed as a new issue, cross-linked, rather than ` +
         'risking a false merge.';
       const body = reviewFlagBody(rawReport, reason, confidence, `### Possible duplicate\n\nSee #${verdict.target_issue}.`);
-      const action: PendingAction = { type: 'create_issue', title: decision.title, body, labels: [NEEDS_TRIAGE], target_issue: null };
+      const action: PendingAction = { type: 'create_issue', title: redactSecrets(decision.title), body, labels: [NEEDS_TRIAGE], target_issue: null };
       return { action, outcome: 'review_flagged', verdict, confidence, ...evidence };
     }
 
@@ -328,7 +329,7 @@ export class PipelineService {
     });
     const body = bugIssueBody(rawReport, decision);
     const labels = [decision.severity, ...decision.components];
-    const action: PendingAction = { type: 'create_issue', title: decision.title, body, labels, target_issue: null };
+    const action: PendingAction = { type: 'create_issue', title: redactSecrets(decision.title), body, labels, target_issue: null };
     return { action, outcome: 'issue_created', verdict, confidence, ...evidence };
   }
 
@@ -349,7 +350,7 @@ export class PipelineService {
       .filter((part) => part.trim())
       .join('\n\n');
     const body = reviewFlagBody(rawReport, reason, confidence, extra);
-    const action: PendingAction = { type: 'create_issue', title: decision.title, body, labels: [NEEDS_TRIAGE], target_issue: null };
+    const action: PendingAction = { type: 'create_issue', title: redactSecrets(decision.title), body, labels: [NEEDS_TRIAGE], target_issue: null };
     return {
       action,
       outcome: 'review_flagged',

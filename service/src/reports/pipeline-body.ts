@@ -45,7 +45,7 @@ export function issueBody(rawReport: string, rationale: string, extra = ''): str
 export function bugIssueBody(rawReport: string, decision: TriageDecision): string {
   const steps =
     decision.repro_steps && decision.repro_steps.length > 0
-      ? decision.repro_steps.map((step, i) => `${i + 1}. ${step}`).join('\n')
+      ? decision.repro_steps.map((step, i) => `${i + 1}. ${redactSecrets(step)}`).join('\n')
       : 'No reproduction steps provided.';
   // supporting_evidence is explicitly specified (llm-client.ts's SYSTEM_PROMPT)
   // to carry pasted logs/stack traces verbatim -- a second channel for a
