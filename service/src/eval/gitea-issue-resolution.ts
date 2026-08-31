@@ -1,6 +1,24 @@
+import { Settings } from '../config/settings';
+
 export interface GiteaIssueSummary {
   number: number;
   title: string;
+}
+
+/**
+ * Fetches every issue (any state) and resolves `titleSubstring` via
+ * resolveGiteaIssueByTitle. Shared by Set B/C/D's eval harnesses, which all
+ * previously carried their own byte-identical copy of this fetch-then-
+ * resolve pair (code review, scout-hire-audit-opus pass).
+ */
+export async function findGiteaIssueNumber(settings: Settings, titleSubstring: string): Promise<number | null> {
+  const base = `${settings.gitea_url}/api/v1/repos/${settings.gitea_repo_owner}/${settings.gitea_repo_name}`;
+  const resp = await fetch(`${base}/issues?state=all&type=issues&limit=50`, {
+    headers: { Authorization: `token ${settings.gitea_token}` },
+  });
+  if (!resp.ok) throw new Error(`Gitea returned ${resp.status}`);
+  const issues = (await resp.json()) as GiteaIssueSummary[];
+  return resolveGiteaIssueByTitle(issues, titleSubstring);
 }
 
 /**

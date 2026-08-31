@@ -24,7 +24,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 import { loadSettings } from '../config/settings';
 import { Component, Confidence, DuplicateTier, Outcome, ReportType, Severity } from '../reports/types';
-import { GiteaIssueSummary, resolveGiteaIssueByTitle } from './gitea-issue-resolution';
+import { findGiteaIssueNumber } from './gitea-issue-resolution';
 
 const BASE_URL = process.env.TRIAGE_SERVICE_URL ?? 'http://localhost:8000';
 const SETTINGS = loadSettings();
@@ -50,16 +50,6 @@ interface Case {
   id: string;
   rawReport: string;
   check: Check;
-}
-
-async function findGiteaIssueNumber(titleSubstring: string): Promise<number | null> {
-  const base = `${SETTINGS.gitea_url}/api/v1/repos/${SETTINGS.gitea_repo_owner}/${SETTINGS.gitea_repo_name}`;
-  const resp = await fetch(`${base}/issues?state=all&type=issues&limit=50`, {
-    headers: { Authorization: `token ${SETTINGS.gitea_token}` },
-  });
-  if (!resp.ok) throw new Error(`Gitea returned ${resp.status}`);
-  const issues = (await resp.json()) as GiteaIssueSummary[];
-  return resolveGiteaIssueByTitle(issues, titleSubstring);
 }
 
 function checkReportType(expected: ReportType): Check {
@@ -129,7 +119,7 @@ function checkDuplicateTier(expectedTier: DuplicateTier, expectedTargetTitleSubs
       failures.push(`expected duplicate tier=${JSON.stringify(expectedTier)}, got ${JSON.stringify(verdict.tier)}`);
     }
     if (expectedTargetTitleSubstring !== undefined) {
-      const expectedNumber = await findGiteaIssueNumber(expectedTargetTitleSubstring);
+      const expectedNumber = await findGiteaIssueNumber(SETTINGS, expectedTargetTitleSubstring);
       if (expectedNumber === null) {
         failures.push(`could not resolve expected target issue for ${JSON.stringify(expectedTargetTitleSubstring)}`);
       } else if (verdict.target_issue !== expectedNumber) {

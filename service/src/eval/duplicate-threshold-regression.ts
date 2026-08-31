@@ -21,13 +21,16 @@ dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 import { EmbeddingIndex } from '../embeddings/embedding-index';
 import { loadSettings } from '../config/settings';
+import { CLEAR_DUPLICATE_CONFIDENCE_FLOOR } from '../reports/confidence';
 import { CLEAR_DUPLICATE_REPORT, NEAR_MISS_REPORTS, SET_A, UNRELATED_REPORT } from './fixtures';
 
 // Above the near-miss band (0.38-0.44) and below the observed clear-duplicate
 // score (~0.65) -- a regression that collapses the two bands together (e.g.
 // a weaker embedding model) trips this even if the final tier still happens
-// to route correctly today.
-const CLEAR_BAND_MIN = 0.5;
+// to route correctly today. Same value computeConfidence bands a
+// clear_duplicate verdict against (confidence.ts) -- imported rather than
+// re-hardcoded so the two can't silently drift apart.
+const CLEAR_BAND_MIN = CLEAR_DUPLICATE_CONFIDENCE_FLOOR;
 
 interface CaseResult {
   id: string;

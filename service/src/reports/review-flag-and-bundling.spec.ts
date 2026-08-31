@@ -204,4 +204,38 @@ describe('PipelineService (Review Flag unification + Bundled Report handling)', 
     // Gets its own issue, cross-linked to the placeholder, not just a comment.
     expect(bundlePort.calls.filter((c) => c.op === 'create_issue')).toHaveLength(2);
   });
+
+  // Candidate-ordering edge case flagged in code review: a demoted
+  // placeholder "yes" is stronger evidence of a real match than a mere
+  // "possibly" on some other candidate, so it must not be silently dropped
+  // just because a weaker "possibly" happened to be seen first (candidates
+  // arrive in descending-similarity order, so a higher-similarity real
+  // "possibly" candidate is judged before a lower-similarity placeholder).
+  it('prefers a demoted placeholder yes-match over a merely-possibly match on a different candidate', async () => {
+    const raw = 'ambiguous report that could match either candidate';
+    const port = new FakeTriagePort();
+    port.extractionQueue = [decision({ severity: 'medium', components: ['backend'] })];
+    const realIssueCandidate: DuplicateCandidate = {
+      issue_number: 5,
+      title: 'Some unrelated real issue',
+      body: '...',
+      similarity: 0.6,
+      labels: [],
+    };
+    const placeholderCandidate: DuplicateCandidate = {
+      issue_number: 9,
+      title: 'Multiple issues bundled',
+      body: '...',
+      similarity: 0.45,
+      labels: ['needs-triage'],
+    };
+    port.candidatesByReport.set(raw, [realIssueCandidate, placeholderCandidate]);
+    port.judgmentsByCandidate.set(5, { same_bug: 'possibly', rationale: 'loosely related' });
+    port.judgmentsByCandidate.set(9, { same_bug: 'yes', rationale: 'explicitly listed in the bundle' });
+
+    const envelope = await new PipelineService(port).processReport(raw);
+
+    expect(envelope.duplicate_verdict?.tier).toBe('possible_duplicate');
+    expect(envelope.duplicate_verdict?.target_issue).toBe(9);
+  });
 });

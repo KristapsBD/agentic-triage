@@ -32,7 +32,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 import { loadSettings } from '../config/settings';
 import { Component, DuplicateTier, Outcome, ReportType, Severity } from '../reports/types';
 import { fileSetDFailure } from './file-set-d-failures';
-import { GiteaIssueSummary, resolveGiteaIssueByTitle } from './gitea-issue-resolution';
+import { findGiteaIssueNumber } from './gitea-issue-resolution';
 
 const BASE_URL = process.env.TRIAGE_SERVICE_URL ?? 'http://localhost:8000';
 const SETTINGS = loadSettings();
@@ -63,15 +63,6 @@ interface Case {
 
 function giteaBase(): string {
   return `${SETTINGS.gitea_url}/api/v1/repos/${SETTINGS.gitea_repo_owner}/${SETTINGS.gitea_repo_name}`;
-}
-
-async function findGiteaIssueNumber(titleSubstring: string): Promise<number | null> {
-  const resp = await fetch(`${giteaBase()}/issues?state=all&type=issues&limit=50`, {
-    headers: { Authorization: `token ${SETTINGS.gitea_token}` },
-  });
-  if (!resp.ok) throw new Error(`Gitea returned ${resp.status}`);
-  const issues = (await resp.json()) as GiteaIssueSummary[];
-  return resolveGiteaIssueByTitle(issues, titleSubstring);
 }
 
 async function giteaGetIssue(number: number): Promise<{ state?: string; body?: string }> {
@@ -123,7 +114,7 @@ function checkDuplicateTier(expectedTier: DuplicateTier, expectedTargetTitleSubs
     if (verdict.tier !== expectedTier) {
       failures.push(`expected duplicate tier=${JSON.stringify(expectedTier)}, got ${JSON.stringify(verdict.tier)}`);
     }
-    const expectedNumber = await findGiteaIssueNumber(expectedTargetTitleSubstring);
+    const expectedNumber = await findGiteaIssueNumber(SETTINGS, expectedTargetTitleSubstring);
     if (expectedNumber === null) {
       failures.push(`could not resolve expected target issue for ${JSON.stringify(expectedTargetTitleSubstring)}`);
     } else if (verdict.target_issue !== expectedNumber) {
@@ -147,7 +138,7 @@ function checkNotClearDuplicateOfTitle(titleSubstring: string): Check {
   return async (body) => {
     const verdict = body.duplicate_verdict;
     if (verdict?.tier !== 'clear_duplicate') return [];
-    const excludedNumber = await findGiteaIssueNumber(titleSubstring);
+    const excludedNumber = await findGiteaIssueNumber(SETTINGS, titleSubstring);
     if (excludedNumber !== null && verdict.target_issue === excludedNumber) {
       return [
         `duplicate tier falsely resolved clear_duplicate against issue #${excludedNumber} ` +
@@ -171,7 +162,7 @@ function ownIssueNumber(body: ResponseBody): number | null | undefined {
 
 function postCheckIssueStateByTitle(titleSubstring: string, expectedState: string): PostCheck {
   return async () => {
-    const number = await findGiteaIssueNumber(titleSubstring);
+    const number = await findGiteaIssueNumber(SETTINGS, titleSubstring);
     if (number === null) return [`could not resolve issue for ${JSON.stringify(titleSubstring)} to verify state`];
     try {
       const issue = await giteaGetIssue(number);

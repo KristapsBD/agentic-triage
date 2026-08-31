@@ -75,6 +75,12 @@ export async function findDuplicateVerdict(
   }
 
   let bestYes: [DuplicateCandidate, DuplicateJudgment] | null = null;
+  // A demoted placeholder "yes" is stronger evidence than a merely
+  // "possibly" match on some other candidate -- kept in its own slot so a
+  // real "possibly" seen first (candidates arrive in descending-similarity
+  // order, so a higher-similarity real candidate can be judged before a
+  // lower-similarity placeholder) can't block it from ever being recorded.
+  let bestDemotedPlaceholder: [DuplicateCandidate, DuplicateJudgment] | null = null;
   let bestPossibly: [DuplicateCandidate, DuplicateJudgment] | null = null;
 
   for (const candidate of candidates) {
@@ -102,7 +108,7 @@ export async function findDuplicateVerdict(
     tokenUsage.push({ call: 'duplicate_judgment', candidate_issue_number: candidate.issue_number, ...usage });
 
     if (judgment.same_bug === 'yes' && isReviewFlagPlaceholder(candidate)) {
-      if (bestPossibly === null) bestPossibly = [candidate, judgment];
+      if (bestDemotedPlaceholder === null) bestDemotedPlaceholder = [candidate, judgment];
     } else if (judgment.same_bug === 'yes' && bestYes === null) {
       bestYes = [candidate, judgment];
     } else if (judgment.same_bug === 'possibly' && bestPossibly === null) {
@@ -123,8 +129,10 @@ export async function findDuplicateVerdict(
       // it was judging is safely redacted wherever it's quoted verbatim.
       rationale: redactSecrets(judgment.rationale),
     };
-  } else if (bestPossibly !== null) {
-    const [candidate, judgment] = bestPossibly;
+  } else if (bestDemotedPlaceholder !== null || bestPossibly !== null) {
+    // A "yes" on a placeholder is stronger evidence than a "possibly" on
+    // something else, so it wins the possible_duplicate slot when both exist.
+    const [candidate, judgment] = bestDemotedPlaceholder ?? bestPossibly!;
     verdict = {
       tier: 'possible_duplicate',
       target_issue: candidate.issue_number,

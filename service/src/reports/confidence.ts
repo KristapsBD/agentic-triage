@@ -22,13 +22,15 @@ export interface ConfidenceResult {
 
 const BANDS: Confidence[] = ['high', 'medium', 'low'];
 
-// Same evidence duplicate-threshold-regression.ts's CLEAR_BAND_MIN asserts
-// on: a genuine clear-duplicate pair scored ~0.65, near-miss cases scored
-// 0.38-0.44. A clear_duplicate verdict whose similarity falls in/near that
-// near-miss band is a thinner signal than the tier alone suggests -- ADR-0001
-// and CONTEXT.md both say Confidence is computed from "duplicate similarity
-// score", not just the categorical tier.
-const CLEAR_DUPLICATE_CONFIDENCE_FLOOR = 0.5;
+// A genuine clear-duplicate pair scored ~0.65 in the floor-tuning evidence
+// (embedding-index.ts), near-miss cases scored 0.38-0.44. A clear_duplicate
+// verdict whose similarity falls in/near that near-miss band is a thinner
+// signal than the tier alone suggests -- ADR-0001 and CONTEXT.md both say
+// Confidence is computed from "duplicate similarity score", not just the
+// categorical tier. Exported so duplicate-threshold-regression.ts's own
+// CLEAR_BAND_MIN check asserts on this exact value instead of a second,
+// independently-hardcoded copy of the same evidence.
+export const CLEAR_DUPLICATE_CONFIDENCE_FLOOR = 0.5;
 
 export function computeConfidence(inputs: ConfidenceInputs): ConfidenceResult {
   if (inputs.validationBudgetExhausted) {

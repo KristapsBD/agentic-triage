@@ -35,7 +35,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 import { loadSettings } from '../config/settings';
 import { Component, DuplicateTier, Outcome, ReportType } from '../reports/types';
 import { fileSetCFailure } from './file-set-c-failures';
-import { GiteaIssueSummary, resolveGiteaIssueByTitle } from './gitea-issue-resolution';
+import { findGiteaIssueNumber } from './gitea-issue-resolution';
 
 const BASE_URL = process.env.TRIAGE_SERVICE_URL ?? 'http://localhost:8000';
 const SETTINGS = loadSettings();
@@ -75,15 +75,6 @@ async function giteaGetIssue(number: number): Promise<{ state?: string; body?: s
   });
   if (!resp.ok) throw new Error(`Gitea returned ${resp.status}`);
   return (await resp.json()) as { state?: string; body?: string };
-}
-
-async function findGiteaIssueNumber(titleSubstring: string): Promise<number | null> {
-  const resp = await fetch(`${giteaBase()}/issues?state=all&type=issues&limit=50`, {
-    headers: { Authorization: `token ${SETTINGS.gitea_token}` },
-  });
-  if (!resp.ok) throw new Error(`Gitea returned ${resp.status}`);
-  const issues = (await resp.json()) as GiteaIssueSummary[];
-  return resolveGiteaIssueByTitle(issues, titleSubstring);
 }
 
 function checkReportType(expected: ReportType): Check {
@@ -143,7 +134,7 @@ function checkNotClearDuplicateOfTitle(titleSubstring: string): Check {
   return async (body) => {
     const verdict = body.duplicate_verdict;
     if (verdict?.tier !== 'clear_duplicate') return [];
-    const excludedNumber = await findGiteaIssueNumber(titleSubstring);
+    const excludedNumber = await findGiteaIssueNumber(SETTINGS, titleSubstring);
     if (excludedNumber !== null && verdict.target_issue === excludedNumber) {
       return [
         `duplicate tier falsely resolved clear_duplicate against issue #${excludedNumber} ` +
@@ -163,7 +154,7 @@ function all(...checks: Check[]): Check {
 
 function postCheckIssueStateByTitle(titleSubstring: string, expectedState: string): PostCheck {
   return async () => {
-    const number = await findGiteaIssueNumber(titleSubstring);
+    const number = await findGiteaIssueNumber(SETTINGS, titleSubstring);
     if (number === null) return [`could not resolve issue for ${JSON.stringify(titleSubstring)} to verify state`];
     try {
       const issue = await giteaGetIssue(number);
