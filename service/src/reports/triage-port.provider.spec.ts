@@ -1,13 +1,13 @@
 /**
- * Regression guard for F2 (scout-hire-audit-opus): triagePortProvider is
- * the real DI composition that wires GiteaClient/LlmClient/EmbeddingIndex/
- * DecisionStore into a TriagePort. Every other duplicate-judgment retry
- * test (retry-budgets.spec.ts) drives FakeTriagePort directly, which
- * implements TriagePort's judgeDuplicate(rawReport, candidate, feedback)
- * itself and so cannot see a composition bug where the real factory drops
- * the third argument on the way to LlmClient. This test instead calls the
- * provider's actual useFactory, the way Nest's DI container does, so a
- * regression here fails exactly the seam the fake cannot reach.
+ * Regression guard for F2 (scout-hire-audit-opus) / F1 (scout-hire-audit-fable):
+ * triagePortProvider is the real DI composition that wires GiteaClient/LlmClient/
+ * EmbeddingIndex/DecisionStore into a TriagePort. Every other duplicate-judgment
+ * retry test (retry-budgets.spec.ts) drives FakeTriagePort directly, which
+ * implements TriagePort's judgeDuplicate(rawReport, candidate, feedback) itself
+ * and so cannot see a composition bug where the real factory drops the third
+ * argument on the way to LlmClient. This test instead calls the provider's
+ * actual useFactory, the way Nest's DI container does, so a regression here
+ * fails exactly the seam the fake cannot reach.
  */
 
 import { DecisionStore } from '../decisions/decision-store';

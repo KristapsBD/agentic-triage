@@ -120,7 +120,7 @@ describe('PipelineService (Ticket #38: Confidence)', () => {
   it('downgrades confidence once a validation retry was consumed during extraction', async () => {
     const raw = 'needed a retry to extract';
     const port = new FakeTriagePort();
-    const budgets = { validation_retry_budget: 2, transient_retry_budget: 3, transient_retry_backoff_seconds: 0 };
+    const budgets = { validation_retry_budget: 2, transient_retry_budget: 3, transient_retry_backoff_seconds: 0, duplicate_similarity_floor: 0.35 };
     port.extractionQueue = [new ExtractionValidationError('bad'), bugDecision()];
     port.candidatesByReport.set(raw, []);
 
@@ -132,7 +132,7 @@ describe('PipelineService (Ticket #38: Confidence)', () => {
   it('floors confidence at low once the validation budget is exhausted on extraction', async () => {
     const raw = 'malformed forever';
     const port = new FakeTriagePort();
-    const budgets = { validation_retry_budget: 2, transient_retry_budget: 3, transient_retry_backoff_seconds: 0 };
+    const budgets = { validation_retry_budget: 2, transient_retry_budget: 3, transient_retry_backoff_seconds: 0, duplicate_similarity_floor: 0.35 };
     port.extractionQueue = [new ExtractionValidationError('bad 1'), new ExtractionValidationError('bad 2'), new ExtractionValidationError('bad 3')];
 
     const envelope = await new PipelineService(port, budgets).processReport(raw);

@@ -22,6 +22,7 @@ export const triagePortProvider: Provider = {
     judgeDuplicate: (rawReport, candidate, feedback) => llm.judgeDuplicate(rawReport, candidate, feedback),
     saveDecisionRecord: (record) => Promise.resolve(decisions.save(record)),
     getDecisionRecord: (reportHash) => Promise.resolve(decisions.get(reportHash)),
+    claimDecisionRecord: (record) => Promise.resolve(decisions.tryClaim(record)),
   }),
   inject: [GiteaClient, LlmClient, EmbeddingIndex, DecisionStore],
 };

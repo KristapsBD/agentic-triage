@@ -27,11 +27,17 @@ const BARE_TOKEN_PATTERNS: RegExp[] = [
 const LABELED_VALUE_PATTERN =
   /\b(password|passwd|pwd|api[_-]?key|secret|access[_-]?key|auth[_-]?token)\b(["']?\s*[:=]\s*["']?)[^\s"',}]{4,}/gi;
 
+// Basic PII pattern (F4 audit finding: the code/eval case name/PR #25 all
+// said "Secrets/PII" but only credential patterns were implemented) --
+// same "pattern-based, not exhaustive" tradeoff as the rest of this file.
+const EMAIL_PATTERN = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
+
 export function redactSecrets(text: string): string {
   let redacted = text;
   for (const pattern of BARE_TOKEN_PATTERNS) {
     redacted = redacted.replace(pattern, REDACTED);
   }
   redacted = redacted.replace(LABELED_VALUE_PATTERN, (_match, key: string, sep: string) => `${key}${sep}${REDACTED}`);
+  redacted = redacted.replace(EMAIL_PATTERN, REDACTED);
   return redacted;
 }

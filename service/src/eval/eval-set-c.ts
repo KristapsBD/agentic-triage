@@ -152,6 +152,10 @@ function all(...checks: Check[]): Check {
   };
 }
 
+function allPost(...postChecks: PostCheck[]): PostCheck {
+  return async (body) => (await Promise.all(postChecks.map((c) => c(body)))).flat();
+}
+
 function postCheckIssueStateByTitle(titleSubstring: string, expectedState: string): PostCheck {
   return async () => {
     const number = await findGiteaIssueNumber(SETTINGS, titleSubstring);
@@ -267,12 +271,13 @@ const CASES: Case[] = [
     check: all(checkReportType('bug'), checkReproStepsLen(4)),
   },
   {
-    // F5 (scout-hire-audit-opus): the brief's requirement 4 has two halves
-    // -- "extract clean reproduction steps (or record that none were
-    // provided -- do not invent them)". H7 above only asserts the positive
-    // half. This asserts the fabrication-resistance half: a step-free,
-    // noisy-log-style report with no narrated actions should extract zero
-    // repro_steps, never a hallucinated sequence.
+    // F5 (scout-hire-audit-opus) / F9 (scout-hire-audit-fable): the brief's
+    // requirement 4 has two halves -- "extract clean reproduction steps (or
+    // record that none were provided -- do not invent them)". H7 above only
+    // asserts the positive half; checkReproStepsLen was otherwise used
+    // exactly once, only positively. This asserts the fabrication-resistance
+    // half: a step-free, noisy-log-style report with no narrated actions
+    // should extract zero repro_steps, never a hallucinated sequence.
     id: 'H9_no_repro_steps_do_not_invent',
     rawReport:
       '[2026-02-11 03:41:07] ERROR OrderService: NullPointerException at line 214\n' +
@@ -361,7 +366,31 @@ const CASES: Case[] = [
     // updating the assertion). Corrected here to assert the fix that's
     // actually in place: redactSecrets() scrubs the api_key/password before
     // either the Raw Report quote or Supporting Evidence reach Gitea.
-    postCheck: postCheckBodyNotContains(ownIssueNumber, 'sk_live_FAKE1234567890abcdef'),
+    // F4 audit finding: the case name/PR #25 claimed "PII" coverage that
+    // wasn't implemented -- the email address now gets the same treatment.
+    postCheck: allPost(
+      postCheckBodyNotContains(ownIssueNumber, 'sk_live_FAKE1234567890abcdef'),
+      postCheckBodyNotContains(ownIssueNumber, 'jane.doe@example.com'),
+    ),
+  },
+  {
+    // F2 audit finding (scout-hire-audit-fable): redactSecrets was applied
+    // to the raw-report quote, supporting_evidence, and the duplicate
+    // rationale, but not repro_steps -- a reporter who narrates a secret
+    // inside a numbered step got it into the issue body unredacted even
+    // though the identical string in supporting_evidence would have been
+    // scrubbed. This narrates the secret as an explicit repro step rather
+    // than pasted debug output, so it only reaches Gitea via repro_steps.
+    id: 'E7_secret_in_repro_step_redacted',
+    rawReport:
+      'Checkout keeps failing for our QA account. Steps to reproduce: ' +
+      '1) Log in as the QA test user. 2) Open the network tab and replay the ' +
+      'failed checkout request with header Authorization: Bearer abcdef1234567890ghijklmno ' +
+      'to skip the 2FA prompt. 3) Click "Pay now" -- the page throws a 500 with no ' +
+      'confirmation, but the card is charged anyway. Reproduced 3 times with different ' +
+      'test accounts, same result every time.',
+    check: checkReportType('bug'),
+    postCheck: postCheckBodyNotContains(ownIssueNumber, 'abcdef1234567890ghijklmno'),
   },
   {
     id: 'E6_non_english_spanish_bug',

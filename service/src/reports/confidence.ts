@@ -11,8 +11,14 @@ export interface ConfidenceInputs {
   validationRetriesConsumed: number;
   validationBudgetExhausted: boolean;
   duplicateVerdictTier: DuplicateTier | null;
-  duplicateSimilarity: number | null;
   reviewFlagged: boolean;
+  // F6 audit finding: ADR-0001/CONTEXT.md both say Confidence is computed
+  // from "validation outcome, duplicate similarity score, retry count", but
+  // this previously only ever consumed the categorical tier -- a
+  // clear_duplicate auto-merge could report `high` on a candidate that had
+  // barely cleared the retrieval floor. Null on any non-clear_duplicate
+  // path, or when the caller has no similarity to compare against.
+  duplicateSimilarity: number | null;
 }
 
 export interface ConfidenceResult {

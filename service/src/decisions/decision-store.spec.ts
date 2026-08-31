@@ -109,6 +109,17 @@ describe('DecisionStore', () => {
     expect(persisted.stage_timings_ms).toEqual(record.stage_timings_ms);
   });
 
+  it('tryClaim inserts only the first call for a report_hash and reports the loser (F3 audit finding)', () => {
+    const store = new DecisionStore({ ...BASE_SETTINGS, decision_db_path: dbPath });
+    const record = { ...sampleRecord(), status: 'pending' as const };
+
+    expect(store.tryClaim(record)).toBe(true);
+    expect(store.tryClaim({ ...record, gitea_issue_number: 999 })).toBe(false);
+
+    // the loser's payload never overwrote the winner's row
+    expect(store.get('hash-1')!.gitea_issue_number).toBe(record.gitea_issue_number);
+  });
+
   it('new fields stay nullable/additive -- an update overwrites the row rather than merging', () => {
     const store = new DecisionStore({ ...BASE_SETTINGS, decision_db_path: dbPath });
     const pending: DecisionRecord = { ...sampleRecord(), status: 'pending', token_usage: [], stage_timings_ms: [] };

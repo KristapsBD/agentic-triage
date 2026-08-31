@@ -175,6 +175,19 @@ describe('PipelineService idempotency', () => {
     expect(record!.transient_retries_consumed).toBe(2);
   });
 
+  it('two concurrent POSTs of the identical Raw Report only run the LLM/Gitea work once (F3 audit finding)', async () => {
+    const raw = 'same report, fired twice at once';
+    const port = new FakeTriagePort();
+    port.extractionQueue = [bugDecision()];
+
+    const service = new PipelineService(port);
+    const [first, second] = await Promise.all([service.processReport(raw), service.processReport(raw)]);
+
+    expect(second).toEqual(first);
+    expect(port.calls.filter((c) => c.op === 'extract').length).toBe(1);
+    expect(port.calls.filter((c) => c.op === 'create_issue').length).toBe(1);
+  });
+
   it('GiteaError surfaces as PipelineUnavailableError with error_code gitea_unavailable', async () => {
     const raw = 'boom on gitea';
     const port = new FakeTriagePort();

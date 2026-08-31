@@ -55,11 +55,35 @@ describe('PipelineService (duplicate detection)', () => {
     expect(envelope.outcome).toBe('duplicate_commented');
     expect(envelope.duplicate_verdict?.tier).toBe('clear_duplicate');
     expect(envelope.duplicate_verdict?.target_issue).toBe(1);
+    expect(envelope.confidence).toBe('high');
     expect(port.calls.some((c) => c.op === 'create_issue')).toBe(false);
     const commentCall = port.calls.find((c) => c.op === 'comment_issue')!;
     const [issueNumber, body] = commentCall.args as [number, string];
     expect(issueNumber).toBe(1);
     expect(body).toContain(raw);
+  });
+
+  // F6 audit finding: confidence never consumed the duplicate similarity
+  // score, so a clear_duplicate that barely cleared the retrieval floor
+  // could still report `high` -- exactly where a false merge is costliest.
+  it('bands confidence down to medium for a clear duplicate that barely cleared the retrieval floor', async () => {
+    const raw = 'a report whose embedding just barely scraped past the retrieval floor';
+    const port = new FakeTriagePort();
+    port.extractionQueue = [bugDecision()];
+    const candidate: DuplicateCandidate = {
+      issue_number: 1,
+      title: 'Login button unresponsive on mobile Safari',
+      body: '...',
+      similarity: 0.36,
+      labels: [],
+    };
+    port.candidatesByReport.set(raw, [candidate]);
+    port.judgmentsByCandidate.set(1, { same_bug: 'yes', rationale: 'same symptom, same platform' });
+
+    const envelope = await new PipelineService(port).processReport(raw);
+
+    expect(envelope.duplicate_verdict?.tier).toBe('clear_duplicate');
+    expect(envelope.confidence).toBe('medium');
   });
 
   it('resolves not_a_duplicate for a near-miss: same area, genuinely different bug', async () => {

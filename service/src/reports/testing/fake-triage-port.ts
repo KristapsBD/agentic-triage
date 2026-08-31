@@ -105,6 +105,13 @@ export class FakeTriagePort implements TriagePort {
     this.records.set(record.report_hash, structuredClone(record));
   }
 
+  async claimDecisionRecord(record: DecisionRecord): Promise<boolean> {
+    this.calls.push({ op: 'claim_decision_record', args: [record.report_hash] });
+    if (this.records.has(record.report_hash)) return false;
+    this.records.set(record.report_hash, structuredClone(record));
+    return true;
+  }
+
   async getDecisionRecord(reportHash: string): Promise<DecisionRecord | null> {
     this.calls.push({ op: 'get_decision_record', args: [reportHash] });
     const rec = this.records.get(reportHash);

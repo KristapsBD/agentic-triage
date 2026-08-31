@@ -51,6 +51,7 @@ import {
   hashReport,
   issueBody,
   reviewFlagBody,
+  suggestedFieldsNote,
 } from './pipeline-body';
 import { PipelineRejectedError, PipelineUnavailableError } from './pipeline.errors';
 import { redactSecrets } from './redaction';
@@ -81,13 +82,20 @@ const VALIDATION_FAILED_NOTE =
   'validation across every retry. This issue was filed automatically as a ' +
   'safe fallback rather than being dropped or crashing the request.';
 
+// Structurally a subset of Settings -- real DI always resolves the full
+// Settings object via the SETTINGS token, which satisfies this.
+export interface PipelineSettings extends RetryBudgets {
+  duplicate_similarity_floor: number;
+}
+
 // Only used as the fallback when PipelineService is constructed directly
 // (tests) rather than through Nest DI, which always resolves the real
 // Settings via the SETTINGS token instead.
-const DEFAULT_RETRY_BUDGETS: RetryBudgets = {
+const DEFAULT_RETRY_BUDGETS: PipelineSettings = {
   validation_retry_budget: 2,
   transient_retry_budget: 3,
   transient_retry_backoff_seconds: 0,
+  duplicate_similarity_floor: 0.35,
 };
 
 interface RoutingResult {
@@ -101,6 +109,12 @@ interface RoutingResult {
   transientRetriesConsumed: number;
 }
 
+// F3 audit finding: bounds on awaitCompletedRecord's poll loop -- 100
+// attempts * 20ms = 2s worst case, comfortably longer than a normal
+// extract+route+Gitea-write round trip.
+const CONCURRENT_CLAIM_POLL_ATTEMPTS = 100;
+const CONCURRENT_CLAIM_POLL_INTERVAL_MS = 20;
+
 const NO_ACTION: PendingAction = { type: 'none', title: null, body: null, labels: [], target_issue: null };
 const NO_EVIDENCE = { candidatesConsidered: [] as DuplicateCandidateConsidered[], tokenUsage: [] as LlmCallUsage[], stageTimings: [] as StageTiming[], transientRetriesConsumed: 0 };
 
@@ -108,7 +122,7 @@ const NO_EVIDENCE = { candidatesConsidered: [] as DuplicateCandidateConsidered[]
 export class PipelineService {
   constructor(
     @Inject(TRIAGE_PORT) private readonly port: TriagePort,
-    @Inject(SETTINGS) private readonly settings: RetryBudgets = DEFAULT_RETRY_BUDGETS,
+    @Inject(SETTINGS) private readonly settings: PipelineSettings = DEFAULT_RETRY_BUDGETS,
     @Inject(TELEMETRY_RECORDER) private readonly telemetry: TelemetryRecorder = new NoopTelemetryRecorder(),
   ) {}
 
@@ -122,8 +136,18 @@ export class PipelineService {
     }
 
     if (record === null) {
-      record = this.newRecord(reportHash, rawReport);
-      await this.save(record);
+      const candidate = this.newRecord(reportHash, rawReport);
+      const claimed = await this.port.claimDecisionRecord(candidate);
+      if (claimed) {
+        record = candidate;
+      } else {
+        // F3 audit finding: another concurrent POST of this identical Raw
+        // Report won the claim in the gap between our read above and this
+        // claim attempt. Wait for it to finish instead of also running the
+        // LLM/Gitea work.
+        record = await this.awaitCompletedRecord(reportHash);
+        return this.envelopeOf(record);
+      }
     }
 
     record.status = 'processing';
@@ -225,6 +249,12 @@ export class PipelineService {
    * judgeDuplicate (read-only LLM/embedding calls), never a Gitea write.
    */
   private async route(decision: TriageDecision, rawReport: string, validationRetriesConsumed: number): Promise<RoutingResult> {
+    // decision.title is model-extracted from reporter text, same as
+    // repro_steps/distinct_issues (F2 audit finding) -- redact before it
+    // reaches Gitea, both as the issue title itself and wherever it's also
+    // embedded in a body below.
+    const title = redactSecrets(decision.title);
+
     if (decision.report_type === 'spam_or_off_topic') {
       const confidence = computeConfidence({
         validationRetriesConsumed,
@@ -244,8 +274,8 @@ export class PipelineService {
         duplicateSimilarity: null,
         reviewFlagged: false,
       });
-      const body = issueBody(rawReport, `**Report Type:** feature_request\n\n${redactSecrets(decision.title)}`);
-      const action: PendingAction = { type: 'create_issue', title: redactSecrets(decision.title), body, labels: [FEATURE_REQUEST], target_issue: null };
+      const body = issueBody(rawReport, `**Report Type:** feature_request\n\n${title}`);
+      const action: PendingAction = { type: 'create_issue', title, body, labels: [FEATURE_REQUEST], target_issue: null };
       return { action, outcome: 'feature_request_filed', verdict: null, confidence, ...NO_EVIDENCE };
     }
 
@@ -258,8 +288,9 @@ export class PipelineService {
         duplicateSimilarity: detection.verdict.similarity,
         reviewFlagged: true,
       });
-      const body = reviewFlagBody(rawReport, UNCLEAR_REASON, confidence, duplicateCrossLinkNote(detection.verdict));
-      const action: PendingAction = { type: 'create_issue', title: redactSecrets(decision.title), body, labels: [NEEDS_INFO], target_issue: null };
+      const extra = [suggestedFieldsNote(decision), duplicateCrossLinkNote(detection.verdict)].filter((part) => part.trim()).join('\n\n');
+      const body = reviewFlagBody(rawReport, UNCLEAR_REASON, confidence, extra);
+      const action: PendingAction = { type: 'create_issue', title, body, labels: [NEEDS_INFO], target_issue: null };
       return {
         action,
         outcome: 'review_flagged',
@@ -315,8 +346,11 @@ export class PipelineService {
         `Duplicate check found a possible match to #${verdict.target_issue} but didn't clear the ` +
         `auto-comment bar (${verdict.rationale}). Filed as a new issue, cross-linked, rather than ` +
         'risking a false merge.';
-      const body = reviewFlagBody(rawReport, reason, confidence, `### Possible duplicate\n\nSee #${verdict.target_issue}.`);
-      const action: PendingAction = { type: 'create_issue', title: redactSecrets(decision.title), body, labels: [NEEDS_TRIAGE], target_issue: null };
+      const possibleDupExtra = [suggestedFieldsNote(decision), `### Possible duplicate\n\nSee #${verdict.target_issue}.`]
+        .filter((part) => part.trim())
+        .join('\n\n');
+      const body = reviewFlagBody(rawReport, reason, confidence, possibleDupExtra);
+      const action: PendingAction = { type: 'create_issue', title, body, labels: [NEEDS_TRIAGE], target_issue: null };
       return { action, outcome: 'review_flagged', verdict, confidence, ...evidence };
     }
 
@@ -329,7 +363,7 @@ export class PipelineService {
     });
     const body = bugIssueBody(rawReport, decision);
     const labels = [decision.severity, ...decision.components];
-    const action: PendingAction = { type: 'create_issue', title: redactSecrets(decision.title), body, labels, target_issue: null };
+    const action: PendingAction = { type: 'create_issue', title, body, labels, target_issue: null };
     return { action, outcome: 'issue_created', verdict, confidence, ...evidence };
   }
 
@@ -342,7 +376,8 @@ export class PipelineService {
       duplicateSimilarity: detection.verdict.similarity,
       reviewFlagged: true,
     });
-    const listing = decision.distinct_issues.map((issue) => `- ${issue}`).join('\n');
+    const title = redactSecrets(decision.title);
+    const listing = decision.distinct_issues.map((issue) => `- ${redactSecrets(issue)}`).join('\n');
     const reason =
       `Report describes what looks like ${decision.distinct_issues.length} distinct ` +
       "issues, not auto-splitting — a human should decide how to split this.";
@@ -350,7 +385,7 @@ export class PipelineService {
       .filter((part) => part.trim())
       .join('\n\n');
     const body = reviewFlagBody(rawReport, reason, confidence, extra);
-    const action: PendingAction = { type: 'create_issue', title: redactSecrets(decision.title), body, labels: [NEEDS_TRIAGE], target_issue: null };
+    const action: PendingAction = { type: 'create_issue', title, body, labels: [NEEDS_TRIAGE], target_issue: null };
     return {
       action,
       outcome: 'review_flagged',
@@ -447,6 +482,28 @@ export class PipelineService {
       duplicate_verdict: record.duplicate_verdict,
       confidence: record.confidence,
     };
+  }
+
+  /**
+   * F3 audit finding: called when claimDecisionRecord lost the race for a
+   * report_hash another concurrent request just created. Polls rather than
+   * doing the LLM/Gitea work a second time; bounded so a request that lost
+   * the claim can never hang forever if the winner's request dies mid-flight
+   * (its record stays at 'processing' rather than 'completed').
+   */
+  private async awaitCompletedRecord(reportHash: string): Promise<DecisionRecord> {
+    for (let attempt = 0; attempt < CONCURRENT_CLAIM_POLL_ATTEMPTS; attempt += 1) {
+      const record = await this.port.getDecisionRecord(reportHash);
+      if (record !== null && record.status === 'completed') {
+        return record;
+      }
+      await new Promise((resolve) => setTimeout(resolve, CONCURRENT_CLAIM_POLL_INTERVAL_MS));
+    }
+    throw new PipelineUnavailableError(
+      reportHash,
+      'concurrent_claim_timeout',
+      'a concurrent request for the same report is still processing; retry the identical POST',
+    );
   }
 
   private recordStage(reportHash: string, timing: StageTiming): void {
