@@ -188,6 +188,15 @@ decision.
   can still both list open issues before either has filed, and both file.
   Disclosed rather than fixed; closing it would need broader locking than a
   report-hash key can express.
+- **`supporting_evidence` and `repro_steps` are redacted for secrets but
+  not code-fenced**, unlike the raw-report quote (`quote()` in
+  `pipeline-body.ts`). The system prompt tells the model to carry pasted
+  logs into `supporting_evidence` "verbatim," so injected markdown sitting
+  in a pasted log — an `@mention`, an image embed, a markdown link — could
+  ride through the model's copy and render live in Gitea: the same
+  rendering risk the raw-report fence exists to stop, just through a
+  channel the fence doesn't cover. Caught on a final read-through, not
+  fixed before submission.
 
 ## Process note
 
