@@ -8,6 +8,20 @@ carries that disclosure narrative — what the agent building this got wrong
 while building it, and how it was caught — in a form that ships with the
 repo (the brief's evaluation criteria ask for this explicitly).
 
+## How this was driven
+
+Built with a personal multi-agent harness, **firstmate**, running concurrent
+Claude agents in isolated git worktrees via its **herdr** backend — the
+`fm/bt-*`/`fm/fix-*` branches throughout `git log` are those agent runs. Each
+followed the same skill chain: `/grill` (stress-test the raw brief for gaps),
+`/to-spec` (formalize into `CONTEXT.md`/`docs/adr/`), `/to-tickets` (split
+into Gitea tickets with explicit blocking edges so concurrent agents get
+provably disjoint scope — `docs/agents/parallel-work.md`), `/implement`
+(write the code per ticket). None of that replaced review: the redaction gap
+caught mid-build and the two independent adversarial audits that found the
+false-merge and DI-wiring bugs (`docs/what-the-agent-got-wrong.md`) are the
+actual steering/hardening this exercise is about, not this paragraph.
+
 Turns a free-text bug report into a structured, triaged Gitea issue, checking
 for duplicates before creating anything. Implements the spec in #5 (tickets
 #6–#14), rebuilt in NestJS/TypeScript per #26 (tickets #27-#36) — see those
