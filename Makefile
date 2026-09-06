@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap up down stop restart build logs logs-service logs-gitea ps \
+.PHONY: help bootstrap up down stop restart recreate build logs logs-service logs-gitea ps \
 	sh sh-gitea gitea-cli seed eval eval-set-d reset-demo fresh-start \
 	test test-watch typecheck lint preflight check status clean-volumes \
 	add
@@ -25,6 +25,9 @@ stop: ## Stop containers without removing them
 
 restart: ## Restart the triage-service container
 	docker compose restart triage-service
+
+recreate: ## Force-recreate all containers in place, without wiping volumes (fixes stale bind mounts after a host/WSL2 restart; `restart` alone won't refresh a stale mount, `fresh-start` wipes data)
+	docker compose up -d --force-recreate
 
 build: ## Rebuild the triage-service image (needed after package.json changes)
 	docker compose up -d --build triage-service
