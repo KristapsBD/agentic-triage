@@ -21,4 +21,10 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'off',
     },
   },
+  {
+    ignores: ['src/eval/**', 'src/scripts/**', '**/*.module.ts', 'src/main.ts'],
+    rules: {
+      complexity: ['error', 4],
+    },
+  },
 );
