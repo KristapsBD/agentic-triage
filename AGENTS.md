@@ -49,13 +49,17 @@ suite once per mutant, and full type-checking on every run makes mutation testin
 CPU-bound on the compiler instead of the tests, causing spurious timeouts rather
 than real signal; `npm run typecheck` already covers type-checking separately.
 
-CI (issue #4) wires three of these checks — `typecheck`, `lint`, `coverage` —
-into `.github/workflows/quality-gate.yml` as required GitHub Actions status
-checks on `main` (branch protection blocks merging while any is red).
-`mutation` also runs per PR there, scoped to changed files via Stryker's
-`--since` for speed, but is report-only, not required — see
-`docs/agents/issue-tracker.md` for the required-PR flow and why `lint` being
-required means `main` is currently frozen for every PR (pending #5/#6).
+CI (issue #4) wires these checks into `.github/workflows/quality-gate.yml`,
+run on every PR against `main`. Only `typecheck` and `coverage` are required
+GitHub Actions status checks (branch protection blocks merging while either
+is red); `lint` and `mutation` also run and report on each PR but are not
+required — `lint` because ESLint checks the whole tree rather than a PR's
+diff, so making it required would deadlock the CRAP-ranked remediation
+backlog (#5), where only its last fix could ever turn the check green, and
+`mutation` (scoped to changed files via Stryker's `--since`) because a
+full-repo run is too slow for a per-PR gate. See
+`docs/agents/issue-tracker.md` for the required-PR flow, and its note for
+whoever closes #6 to add `lint` back as required once the tree is clean.
 
 ### Observability stack (Prometheus/Grafana/Loki)
 

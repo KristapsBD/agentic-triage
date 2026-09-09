@@ -13,21 +13,25 @@ CLI (preferred over plain `gh`) for all operations — it mirrors `gh`'s `issue`
 
 `main` is branch-protected: changes land only via a pull request that passes the
 CI quality gate (`.github/workflows/quality-gate.yml`). Required status checks
-are `typecheck`, `lint`, and `coverage` — direct pushes to `main` are blocked,
-and a PR with any of these three red cannot be merged. `mutation` also runs on
-every PR (Stryker scoped to files changed since `main`, via `--since`) but is
-report-only, not required: a full-repo Stryker run is too slow (~15min) for a
-per-PR gate, and the full-repo mutation floor is already enforced locally by
-`npm run preflight` and tracked by issues #5/#6. See the "Quality gate" section
-of `AGENTS.md` for what each check enforces and its current pass/fail state.
+are `typecheck` and `coverage` — direct pushes to `main` are blocked, and a PR
+with either red cannot be merged.
 
-`lint`'s complexity ceiling is red against 14 pre-existing functions
-repo-wide (AGENTS.md), so it currently fails identically for *every* PR
-regardless of that PR's own diff — **main is intentionally frozen for all
-PRs** until the CRAP-ranked remediation backlog (#5) lands enough fixes to
-flip it green, tracked by the freeze-lift issue (#6). This isn't a bug in
-the gate; it's the gate doing its job against a codebase whose complexity
-debt predates it.
+`lint` and `mutation` also run on every PR and report on it, but are **not**
+required. `lint`'s complexity ceiling is red against 14 pre-existing functions
+repo-wide (AGENTS.md): ESLint checks the whole tree, not just a PR's diff, so
+only the *last* of the CRAP-ranked remediation backlog's (#5) fixes would ever
+turn it green — making it required would deadlock that worst-first,
+one-module-at-a-time plan, since no intermediate fix PR could pass either.
+`mutation` is scoped to files changed since `main` (Stryker's `--since`) for
+speed, but the full-repo mutation floor is already enforced locally by
+`npm run preflight` and tracked by #5/#6. See the "Quality gate" section of
+`AGENTS.md` for what each check enforces and its current pass/fail state.
+
+**Note for whoever closes #6**: once the remediation backlog lands and `lint`
+is clean repo-wide, add `lint` back to `main`'s required status checks
+(`gh api -X PUT repos/<owner>/<repo>/branches/main/protection` with
+`required_status_checks.contexts` including `lint`) — it was dropped only to
+avoid the deadlock above, not because it's meant to stay optional forever.
 
 ## Setup
 
