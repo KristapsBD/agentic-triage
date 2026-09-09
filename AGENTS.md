@@ -2,7 +2,10 @@
 
 ### Issue tracker
 
-Issues are tracked in this repo's self-hosted Gitea instance via the `tea` CLI. See `docs/agents/issue-tracker.md`.
+This codebase's own planning/PRs live on GitHub (`origin`) via the `gh-axi`/`gh` CLI.
+The triage service's separate runtime Gitea target (`acme-app`) is unchanged — see
+[ADR-0004](docs/adr/0004-service-uses-gitea-rest-api-not-tea-cli.md). Old history and
+PRs prior to the GitHub move remain on the `gitea` remote. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
