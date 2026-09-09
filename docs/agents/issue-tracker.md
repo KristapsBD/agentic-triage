@@ -21,6 +21,14 @@ per-PR gate, and the full-repo mutation floor is already enforced locally by
 `npm run preflight` and tracked by issues #5/#6. See the "Quality gate" section
 of `AGENTS.md` for what each check enforces and its current pass/fail state.
 
+`lint`'s complexity ceiling is red against 14 pre-existing functions
+repo-wide (AGENTS.md), so it currently fails identically for *every* PR
+regardless of that PR's own diff — **main is intentionally frozen for all
+PRs** until the CRAP-ranked remediation backlog (#5) lands enough fixes to
+flip it green, tracked by the freeze-lift issue (#6). This isn't a bug in
+the gate; it's the gate doing its job against a codebase whose complexity
+debt predates it.
+
 ## Setup
 
 `gh-axi` needs GitHub auth configured in the environment before it works (same
