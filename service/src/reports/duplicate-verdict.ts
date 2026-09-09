@@ -52,6 +52,92 @@ export interface DuplicateDetectionResult {
   transientRetriesConsumed: number;
 }
 
+interface CandidateOutcome {
+  stageTiming: StageTiming;
+  transientAttempts: number;
+  considered: DuplicateCandidateConsidered;
+  success: { usage: LlmCallUsage; judgment: DuplicateJudgment } | null;
+}
+
+async function evaluateCandidate(
+  port: TriagePort,
+  rawReport: string,
+  candidate: DuplicateCandidate,
+  budgets: RetryBudgets,
+): Promise<CandidateOutcome> {
+  const callStart = Date.now();
+  const outcome = await withRetryBudgets((feedback) => port.judgeDuplicate(rawReport, candidate, feedback), budgets);
+  const stageTiming: StageTiming = {
+    stage: 'duplicate_judgment',
+    duration_ms: Date.now() - callStart,
+    candidate_issue_number: candidate.issue_number,
+  };
+
+  if (outcome.failure === 'transient_exhausted') {
+    throw new PipelineUnavailableError(hashReport(rawReport), 'llm_unavailable', outcome.lastError ?? '');
+  }
+  if (outcome.failure === 'validation_exhausted') {
+    return {
+      stageTiming,
+      transientAttempts: outcome.transientAttempts,
+      considered: { issue_number: candidate.issue_number, similarity: candidate.similarity, same_bug: null },
+      success: null,
+    };
+  }
+  const { judgment, usage } = outcome.result as { judgment: DuplicateJudgment; usage: { input_tokens: number; output_tokens: number } };
+  return {
+    stageTiming,
+    transientAttempts: outcome.transientAttempts,
+    considered: { issue_number: candidate.issue_number, similarity: candidate.similarity, same_bug: judgment.same_bug },
+    success: { usage: { call: 'duplicate_judgment', candidate_issue_number: candidate.issue_number, ...usage }, judgment },
+  };
+}
+
+type BestSlot = 'placeholder-yes' | 'yes' | 'possibly';
+type Classification = BestSlot | 'none';
+type BestCandidates = Record<BestSlot, [DuplicateCandidate, DuplicateJudgment] | null>;
+
+/**
+ * A demoted placeholder "yes" is stronger evidence than a merely "possibly"
+ * match on some other candidate -- kept in its own slot so a real "possibly"
+ * seen first (candidates arrive in descending-similarity order, so a
+ * higher-similarity real candidate can be judged before a lower-similarity
+ * placeholder) can't block it from ever being recorded.
+ */
+function classify(candidate: DuplicateCandidate, judgment: DuplicateJudgment): Classification {
+  if (judgment.same_bug === 'possibly') return 'possibly';
+  if (judgment.same_bug !== 'yes') return 'none';
+  return isReviewFlagPlaceholder(candidate) ? 'placeholder-yes' : 'yes';
+}
+
+function recordBest(best: BestCandidates, classification: Classification, candidate: DuplicateCandidate, judgment: DuplicateJudgment): void {
+  if (classification === 'none') return;
+  if (best[classification] !== null) return;
+  best[classification] = [candidate, judgment];
+}
+
+function buildVerdict(best: BestCandidates): DuplicateVerdict {
+  if (best.yes !== null) {
+    const [candidate, judgment] = best.yes;
+    return {
+      tier: 'clear_duplicate',
+      target_issue: candidate.issue_number,
+      similarity: candidate.similarity,
+      // judgment.rationale is free text the model wrote after reading the
+      // *unredacted* raw report (extract()/judgeDuplicate() always see the
+      // original), so it can echo a secret back even though the raw report
+      // it was judging is safely redacted wherever it's quoted verbatim.
+      rationale: redactSecrets(judgment.rationale),
+    };
+  }
+  // A "yes" on a placeholder is stronger evidence than a "possibly" on
+  // something else, so it wins the possible_duplicate slot when both exist.
+  const fallback = best['placeholder-yes'] ?? best.possibly;
+  if (fallback === null) return NOT_A_DUPLICATE;
+  const [candidate, judgment] = fallback;
+  return { tier: 'possible_duplicate', target_issue: candidate.issue_number, similarity: candidate.similarity, rationale: redactSecrets(judgment.rationale) };
+}
+
 export async function findDuplicateVerdict(
   port: TriagePort,
   rawReport: string,
@@ -74,72 +160,18 @@ export async function findDuplicateVerdict(
     return { verdict: NOT_A_DUPLICATE, candidatesConsidered, tokenUsage, stageTimings, transientRetriesConsumed };
   }
 
-  let bestYes: [DuplicateCandidate, DuplicateJudgment] | null = null;
-  // A demoted placeholder "yes" is stronger evidence than a merely
-  // "possibly" match on some other candidate -- kept in its own slot so a
-  // real "possibly" seen first (candidates arrive in descending-similarity
-  // order, so a higher-similarity real candidate can be judged before a
-  // lower-similarity placeholder) can't block it from ever being recorded.
-  let bestDemotedPlaceholder: [DuplicateCandidate, DuplicateJudgment] | null = null;
-  let bestPossibly: [DuplicateCandidate, DuplicateJudgment] | null = null;
+  const best: BestCandidates = { 'placeholder-yes': null, yes: null, possibly: null };
 
   for (const candidate of candidates) {
-    const callStart = Date.now();
-    const outcome = await withRetryBudgets(
-      (feedback) => port.judgeDuplicate(rawReport, candidate, feedback),
-      budgets,
-    );
-    stageTimings.push({
-      stage: 'duplicate_judgment',
-      duration_ms: Date.now() - callStart,
-      candidate_issue_number: candidate.issue_number,
-    });
+    const outcome = await evaluateCandidate(port, rawReport, candidate, budgets);
+    stageTimings.push(outcome.stageTiming);
     transientRetriesConsumed += outcome.transientAttempts;
-
-    if (outcome.failure === 'transient_exhausted') {
-      throw new PipelineUnavailableError(hashReport(rawReport), 'llm_unavailable', outcome.lastError ?? '');
-    }
-    if (outcome.failure === 'validation_exhausted') {
-      candidatesConsidered.push({ issue_number: candidate.issue_number, similarity: candidate.similarity, same_bug: null });
-      continue;
-    }
-    const { judgment, usage } = outcome.result as { judgment: DuplicateJudgment; usage: { input_tokens: number; output_tokens: number } };
-    candidatesConsidered.push({ issue_number: candidate.issue_number, similarity: candidate.similarity, same_bug: judgment.same_bug });
-    tokenUsage.push({ call: 'duplicate_judgment', candidate_issue_number: candidate.issue_number, ...usage });
-
-    if (judgment.same_bug === 'yes' && isReviewFlagPlaceholder(candidate)) {
-      if (bestDemotedPlaceholder === null) bestDemotedPlaceholder = [candidate, judgment];
-    } else if (judgment.same_bug === 'yes' && bestYes === null) {
-      bestYes = [candidate, judgment];
-    } else if (judgment.same_bug === 'possibly' && bestPossibly === null) {
-      bestPossibly = [candidate, judgment];
+    candidatesConsidered.push(outcome.considered);
+    if (outcome.success !== null) {
+      tokenUsage.push(outcome.success.usage);
+      recordBest(best, classify(candidate, outcome.success.judgment), candidate, outcome.success.judgment);
     }
   }
 
-  let verdict: DuplicateVerdict = NOT_A_DUPLICATE;
-  if (bestYes !== null) {
-    const [candidate, judgment] = bestYes;
-    verdict = {
-      tier: 'clear_duplicate',
-      target_issue: candidate.issue_number,
-      similarity: candidate.similarity,
-      // judgment.rationale is free text the model wrote after reading the
-      // *unredacted* raw report (extract()/judgeDuplicate() always see the
-      // original), so it can echo a secret back even though the raw report
-      // it was judging is safely redacted wherever it's quoted verbatim.
-      rationale: redactSecrets(judgment.rationale),
-    };
-  } else if (bestDemotedPlaceholder !== null || bestPossibly !== null) {
-    // A "yes" on a placeholder is stronger evidence than a "possibly" on
-    // something else, so it wins the possible_duplicate slot when both exist.
-    const [candidate, judgment] = bestDemotedPlaceholder ?? bestPossibly!;
-    verdict = {
-      tier: 'possible_duplicate',
-      target_issue: candidate.issue_number,
-      similarity: candidate.similarity,
-      rationale: redactSecrets(judgment.rationale),
-    };
-  }
-
-  return { verdict, candidatesConsidered, tokenUsage, stageTimings, transientRetriesConsumed };
+  return { verdict: buildVerdict(best), candidatesConsidered, tokenUsage, stageTimings, transientRetriesConsumed };
 }
