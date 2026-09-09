@@ -73,3 +73,5 @@ Used by `/wayfinder`. The **map** is a single issue with **child** issues as tic
 - **Frontier query**: `gh-axi issue list --state open` scoped to the map's children, drop any with an open blocker in the `Blocked by` line or an assignee; first in map order wins.
 - **Claim**: `gh-axi issue edit <n> --add-assignee <user>`, the session's first write.
 - **Resolve**: `gh-axi issue comment <n> --body "<answer>"`, then `gh-axi issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far.
+
+<!-- scratch: clean proof PR, not merged -->
