@@ -21,6 +21,10 @@ Once registered, `tea` infers the repo from the git remote when run inside a clo
 - **Comment on an issue**: `tea comment <index> "..."`.
 - **Apply / remove labels**: `tea label list` to see what's available, `tea issues edit <index> --add-labels "..."` / `--remove-labels "..."` (plural flags — `tea issues edit --help` is the source of truth if this drifts again; Gitea labels must exist in the repo first — create with `tea label create` if missing).
 - **Close**: `tea comment <index> "..."` to explain, then `tea issues close <index>`.
+- **Open a pull request**: `tea pulls create --title "..." --description "..." --head <branch> --base main`.
+  Branch naming follows this repo's own history (`fm/<slug>`, or `fm/bt-<ticket#>-<slug>` for
+  ticket work — check `git log --all` if unsure). Push the branch first
+  (`git push -u origin <branch>`) — `tea` doesn't push for you.
 
 ## Pull requests as a triage surface
 
@@ -33,6 +37,13 @@ Gitea numbers issues and PRs from a shared space per-repo (like GitHub), so a ba
 ## When a skill says "publish to the issue tracker"
 
 Create a Gitea issue.
+
+## When a skill says "open a pull request"
+
+Push the ticket's branch, then `tea pulls create` against it (see Conventions above). Reference
+the ticket issue number in the PR description. This repo's `/implement` skill ships this way by
+default — commit to a branch, push, open a PR — never a direct commit to `main` and never a
+self-merge unless explicitly told to.
 
 ## When a skill says "fetch the relevant ticket"
 
