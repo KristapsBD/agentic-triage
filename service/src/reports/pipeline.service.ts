@@ -55,7 +55,7 @@ import {
 } from './pipeline-body';
 import { PipelineRejectedError, PipelineUnavailableError } from './pipeline.errors';
 import { redactSecrets } from './redaction';
-import { RetryBudgets, withRetryBudgets } from './retry';
+import { RetryBudgets, RetryOutcome, withRetryBudgets } from './retry';
 import { isBundled } from './schemas';
 import { NoopTelemetryRecorder } from '../telemetry/noop-telemetry-recorder';
 import { TELEMETRY_RECORDER, TelemetryRecorder } from '../telemetry/telemetry-recorder.interface';
@@ -67,6 +67,7 @@ import {
   LlmCallUsage,
   Outcome,
   PendingAction,
+  ReportType,
   ResponseEnvelope,
   StageTiming,
   TriageDecision,
@@ -109,6 +110,10 @@ interface RoutingResult {
   transientRetriesConsumed: number;
 }
 
+type ExtractionOutcome = RetryOutcome<{ decision: TriageDecision; usage: { input_tokens: number; output_tokens: number } }>;
+
+type RecordResolution = { kind: 'ready'; record: DecisionRecord } | { kind: 'done'; envelope: ResponseEnvelope };
+
 // F3 audit finding: bounds on awaitCompletedRecord's poll loop -- 100
 // attempts * 20ms = 2s worst case, comfortably longer than a normal
 // extract+route+Gitea-write round trip.
@@ -129,102 +134,177 @@ export class PipelineService {
   async processReport(rawReport: string): Promise<ResponseEnvelope> {
     const reportHash = hashReport(rawReport);
     const requestStart = Date.now();
-    let record = await this.port.getDecisionRecord(reportHash);
-
-    if (record !== null && record.status === 'completed') {
-      return this.envelopeOf(record);
+    const resolution = await this.resolveRecord(reportHash, rawReport);
+    if (resolution.kind === 'done') {
+      return resolution.envelope;
     }
-
-    if (record === null) {
-      const candidate = this.newRecord(reportHash, rawReport);
-      const claimed = await this.port.claimDecisionRecord(candidate);
-      if (claimed) {
-        record = candidate;
-      } else {
-        // F3 audit finding: another concurrent POST of this identical Raw
-        // Report won the claim in the gap between our read above and this
-        // claim attempt. Wait for it to finish instead of also running the
-        // LLM/Gitea work.
-        record = await this.awaitCompletedRecord(reportHash);
-        return this.envelopeOf(record);
-      }
-    }
+    const record = resolution.record;
 
     record.status = 'processing';
     await this.save(record);
 
-    if (record.triage_decision === null) {
-      const stageStart = Date.now();
-      const outcome = await withRetryBudgets((feedback) => this.port.extract(rawReport, feedback), this.settings);
-      const extractionTiming: StageTiming = { stage: 'extraction', duration_ms: Date.now() - stageStart, candidate_issue_number: null };
-      record.stage_timings_ms.push(extractionTiming);
-      this.recordStage(reportHash, extractionTiming);
-      record.transient_retries_consumed += outcome.transientAttempts;
-
-      if (outcome.failure === 'transient_exhausted') {
-        this.telemetry.recordRetryOutcome('extraction', 'transient', 'exhausted', outcome.transientAttempts);
-        throw new PipelineUnavailableError(reportHash, 'llm_unavailable', outcome.lastError ?? '');
-      }
-      if (outcome.transientAttempts > 0) {
-        this.telemetry.recordRetryOutcome('extraction', 'transient', 'succeeded', outcome.transientAttempts);
-      }
-      if (outcome.failure === 'validation_exhausted') {
-        this.telemetry.recordRetryOutcome('extraction', 'validation', 'exhausted', outcome.validationAttempts);
-        record.validation_retries_consumed = outcome.validationAttempts;
-        record.validation_budget_exhausted = true;
-        const confidence = computeConfidence({
-          validationRetriesConsumed: outcome.validationAttempts,
-          validationBudgetExhausted: true,
-          duplicateVerdictTier: null,
-          duplicateSimilarity: null,
-          reviewFlagged: true,
-        });
-        record.confidence = confidence.band;
-        const body = reviewFlagBody(rawReport, VALIDATION_FAILED_NOTE, confidence);
-        record.pending_action = {
-          type: 'create_issue',
-          title: 'Automated triage failed for incoming report',
-          body,
-          labels: [NEEDS_TRIAGE],
-          target_issue: null,
-        };
-        record.outcome = 'review_flagged';
-        this.telemetry.recordOutcome(record.outcome);
-        await this.save(record);
-        return this.finishRequest(record, requestStart);
-      }
-      if (outcome.validationAttempts > 0) {
-        this.telemetry.recordRetryOutcome('extraction', 'validation', 'succeeded', outcome.validationAttempts);
-      }
-
-      const { decision, usage } = outcome.result as { decision: TriageDecision; usage: { input_tokens: number; output_tokens: number } };
-      record.triage_decision = decision;
-      const extractUsage: LlmCallUsage = { call: 'extract', candidate_issue_number: null, ...usage };
-      record.token_usage.push(extractUsage);
-      this.telemetry.recordTokenUsage(extractUsage);
-      record.validation_retries_consumed = outcome.validationAttempts;
-      record.validation_budget_exhausted = false;
-      await this.save(record);
+    const extracted = await this.ensureTriageDecision(record, rawReport, requestStart);
+    if (extracted !== null) {
+      return extracted;
     }
 
-    const decision = record.triage_decision;
-
-    if (record.pending_action === null) {
-      const routing = await this.route(decision, rawReport, record.validation_retries_consumed);
-      record.pending_action = routing.action;
-      record.outcome = routing.outcome;
-      record.duplicate_verdict = routing.verdict;
-      record.confidence = routing.confidence.band;
-      record.duplicate_candidates_considered = routing.candidatesConsidered;
-      record.token_usage.push(...routing.tokenUsage);
-      record.stage_timings_ms.push(...routing.stageTimings);
-      record.transient_retries_consumed += routing.transientRetriesConsumed;
-      this.recordRoutingTelemetry(reportHash, routing);
-      this.telemetry.recordOutcome(record.outcome);
-      await this.save(record);
-    }
+    await this.ensureRouting(record, rawReport);
 
     return this.finishRequest(record, requestStart);
+  }
+
+  /**
+   * Resolves the Decision Record for a Raw Report: an already-completed
+   * record short-circuits to its envelope, a fresh report claims a new
+   * record, and losing that claim to a concurrent identical POST (F3 audit
+   * finding) waits for the winner instead of also running the LLM/Gitea work.
+   */
+  private async resolveRecord(reportHash: string, rawReport: string): Promise<RecordResolution> {
+    const existing = await this.port.getDecisionRecord(reportHash);
+    if (existing !== null) {
+      return this.resolveExistingRecord(existing);
+    }
+    return this.claimNewRecord(reportHash, rawReport);
+  }
+
+  private resolveExistingRecord(existing: DecisionRecord): RecordResolution {
+    if (existing.status === 'completed') {
+      return { kind: 'done', envelope: this.envelopeOf(existing) };
+    }
+    return { kind: 'ready', record: existing };
+  }
+
+  private async claimNewRecord(reportHash: string, rawReport: string): Promise<RecordResolution> {
+    const candidate = this.newRecord(reportHash, rawReport);
+    const claimed = await this.port.claimDecisionRecord(candidate);
+    if (claimed) {
+      return { kind: 'ready', record: candidate };
+    }
+    const winner = await this.awaitCompletedRecord(reportHash);
+    return { kind: 'done', envelope: this.envelopeOf(winner) };
+  }
+
+  /**
+   * Ensures record.triage_decision is populated, running the extraction
+   * retry budget if needed. Returns a final envelope when validation
+   * exhausted its budget (the fallback needs-triage path short-circuits the
+   * rest of processReport), otherwise null to signal "continue".
+   */
+  private async ensureTriageDecision(
+    record: DecisionRecord,
+    rawReport: string,
+    requestStart: number,
+  ): Promise<ResponseEnvelope | null> {
+    if (record.triage_decision !== null) {
+      return null;
+    }
+    const outcome = await this.runExtractionCall(record, rawReport);
+    return this.handleExtractionOutcome(record, rawReport, requestStart, outcome);
+  }
+
+  private async runExtractionCall(record: DecisionRecord, rawReport: string): Promise<ExtractionOutcome> {
+    const stageStart = Date.now();
+    const outcome = await withRetryBudgets((feedback) => this.port.extract(rawReport, feedback), this.settings);
+    const extractionTiming: StageTiming = { stage: 'extraction', duration_ms: Date.now() - stageStart, candidate_issue_number: null };
+    record.stage_timings_ms.push(extractionTiming);
+    this.recordStage(record.report_hash, extractionTiming);
+    record.transient_retries_consumed += outcome.transientAttempts;
+    return outcome;
+  }
+
+  private async handleExtractionOutcome(
+    record: DecisionRecord,
+    rawReport: string,
+    requestStart: number,
+    outcome: ExtractionOutcome,
+  ): Promise<ResponseEnvelope | null> {
+    if (outcome.failure === 'transient_exhausted') {
+      this.telemetry.recordRetryOutcome('extraction', 'transient', 'exhausted', outcome.transientAttempts);
+      throw new PipelineUnavailableError(record.report_hash, 'llm_unavailable', outcome.lastError ?? '');
+    }
+    this.recordTransientRetrySuccess(outcome);
+
+    if (outcome.failure === 'validation_exhausted') {
+      return this.handleValidationExhausted(record, rawReport, requestStart, outcome);
+    }
+    this.recordValidationRetrySuccess(outcome);
+
+    this.applyExtractionResult(record, outcome);
+    await this.save(record);
+    return null;
+  }
+
+  private recordTransientRetrySuccess(outcome: ExtractionOutcome): void {
+    if (outcome.transientAttempts > 0) {
+      this.telemetry.recordRetryOutcome('extraction', 'transient', 'succeeded', outcome.transientAttempts);
+    }
+  }
+
+  private recordValidationRetrySuccess(outcome: ExtractionOutcome): void {
+    if (outcome.validationAttempts > 0) {
+      this.telemetry.recordRetryOutcome('extraction', 'validation', 'succeeded', outcome.validationAttempts);
+    }
+  }
+
+  private applyExtractionResult(record: DecisionRecord, outcome: ExtractionOutcome): void {
+    const { decision, usage } = outcome.result as { decision: TriageDecision; usage: { input_tokens: number; output_tokens: number } };
+    record.triage_decision = decision;
+    const extractUsage: LlmCallUsage = { call: 'extract', candidate_issue_number: null, ...usage };
+    record.token_usage.push(extractUsage);
+    this.telemetry.recordTokenUsage(extractUsage);
+    record.validation_retries_consumed = outcome.validationAttempts;
+    record.validation_budget_exhausted = false;
+  }
+
+  private async handleValidationExhausted(
+    record: DecisionRecord,
+    rawReport: string,
+    requestStart: number,
+    outcome: ExtractionOutcome,
+  ): Promise<ResponseEnvelope> {
+    this.telemetry.recordRetryOutcome('extraction', 'validation', 'exhausted', outcome.validationAttempts);
+    record.validation_retries_consumed = outcome.validationAttempts;
+    record.validation_budget_exhausted = true;
+    const confidence = computeConfidence({
+      validationRetriesConsumed: outcome.validationAttempts,
+      validationBudgetExhausted: true,
+      duplicateVerdictTier: null,
+      duplicateSimilarity: null,
+      reviewFlagged: true,
+    });
+    record.confidence = confidence.band;
+    const body = reviewFlagBody(rawReport, VALIDATION_FAILED_NOTE, confidence);
+    record.pending_action = {
+      type: 'create_issue',
+      title: 'Automated triage failed for incoming report',
+      body,
+      labels: [NEEDS_TRIAGE],
+      target_issue: null,
+    };
+    record.outcome = 'review_flagged';
+    this.telemetry.recordOutcome(record.outcome);
+    await this.save(record);
+    return this.finishRequest(record, requestStart);
+  }
+
+  /** Computes and persists the routing decision, if not already computed. */
+  private async ensureRouting(record: DecisionRecord, rawReport: string): Promise<void> {
+    if (record.pending_action !== null) {
+      return;
+    }
+    const decision = record.triage_decision as TriageDecision;
+    const routing = await this.route(decision, rawReport, record.validation_retries_consumed);
+    record.pending_action = routing.action;
+    record.outcome = routing.outcome;
+    record.duplicate_verdict = routing.verdict;
+    record.confidence = routing.confidence.band;
+    record.duplicate_candidates_considered = routing.candidatesConsidered;
+    record.token_usage.push(...routing.tokenUsage);
+    record.stage_timings_ms.push(...routing.stageTimings);
+    record.transient_retries_consumed += routing.transientRetriesConsumed;
+    this.recordRoutingTelemetry(record.report_hash, routing);
+    this.telemetry.recordOutcome(record.outcome);
+    await this.save(record);
   }
 
   /**
@@ -254,65 +334,92 @@ export class PipelineService {
     // reaches Gitea, both as the issue title itself and wherever it's also
     // embedded in a body below.
     const title = redactSecrets(decision.title);
+    const handlers: Record<ReportType, (d: TriageDecision, t: string, r: string, v: number) => Promise<RoutingResult>> = {
+      spam_or_off_topic: (_d, _t, _r, v) => this.routeSpam(v),
+      feature_request: (_d, t, r, v) => this.routeFeatureRequest(t, r, v),
+      unclear: (d, t, r, v) => this.routeUnclear(d, t, r, v),
+      bug: (d, t, r, v) => this.routeBug(d, t, r, v),
+    };
+    return handlers[decision.report_type](decision, title, rawReport, validationRetriesConsumed);
+  }
 
-    if (decision.report_type === 'spam_or_off_topic') {
-      const confidence = computeConfidence({
-        validationRetriesConsumed,
-        validationBudgetExhausted: false,
-        duplicateVerdictTier: null,
-        duplicateSimilarity: null,
-        reviewFlagged: false,
-      });
-      return { action: NO_ACTION, outcome: 'dropped_spam', verdict: null, confidence, ...NO_EVIDENCE };
-    }
+  private async routeSpam(validationRetriesConsumed: number): Promise<RoutingResult> {
+    const confidence = computeConfidence({
+      validationRetriesConsumed,
+      validationBudgetExhausted: false,
+      duplicateVerdictTier: null,
+      duplicateSimilarity: null,
+      reviewFlagged: false,
+    });
+    return { action: NO_ACTION, outcome: 'dropped_spam', verdict: null, confidence, ...NO_EVIDENCE };
+  }
 
-    if (decision.report_type === 'feature_request') {
-      const confidence = computeConfidence({
-        validationRetriesConsumed,
-        validationBudgetExhausted: false,
-        duplicateVerdictTier: null,
-        duplicateSimilarity: null,
-        reviewFlagged: false,
-      });
-      const body = issueBody(rawReport, `**Report Type:** feature_request\n\n${title}`);
-      const action: PendingAction = { type: 'create_issue', title, body, labels: [FEATURE_REQUEST], target_issue: null };
-      return { action, outcome: 'feature_request_filed', verdict: null, confidence, ...NO_EVIDENCE };
-    }
+  private async routeFeatureRequest(title: string, rawReport: string, validationRetriesConsumed: number): Promise<RoutingResult> {
+    const confidence = computeConfidence({
+      validationRetriesConsumed,
+      validationBudgetExhausted: false,
+      duplicateVerdictTier: null,
+      duplicateSimilarity: null,
+      reviewFlagged: false,
+    });
+    const body = issueBody(rawReport, `**Report Type:** feature_request\n\n${title}`);
+    const action: PendingAction = { type: 'create_issue', title, body, labels: [FEATURE_REQUEST], target_issue: null };
+    return { action, outcome: 'feature_request_filed', verdict: null, confidence, ...NO_EVIDENCE };
+  }
 
-    if (decision.report_type === 'unclear') {
-      const detection = await findDuplicateVerdict(this.port, rawReport, this.settings);
-      const confidence = computeConfidence({
-        validationRetriesConsumed,
-        validationBudgetExhausted: false,
-        duplicateVerdictTier: detection.verdict.tier,
-        duplicateSimilarity: detection.verdict.similarity,
-        reviewFlagged: true,
-      });
-      const extra = [suggestedFieldsNote(decision), duplicateCrossLinkNote(detection.verdict)].filter((part) => part.trim()).join('\n\n');
-      const body = reviewFlagBody(rawReport, UNCLEAR_REASON, confidence, extra);
-      const action: PendingAction = { type: 'create_issue', title, body, labels: [NEEDS_INFO], target_issue: null };
-      return {
-        action,
-        outcome: 'review_flagged',
-        verdict: detection.verdict,
-        confidence,
-        candidatesConsidered: detection.candidatesConsidered,
-        tokenUsage: detection.tokenUsage,
-        stageTimings: detection.stageTimings,
-        transientRetriesConsumed: detection.transientRetriesConsumed,
-      };
-    }
+  private async routeUnclear(
+    decision: TriageDecision,
+    title: string,
+    rawReport: string,
+    validationRetriesConsumed: number,
+  ): Promise<RoutingResult> {
+    const detection = await findDuplicateVerdict(this.port, rawReport, this.settings);
+    const confidence = computeConfidence({
+      validationRetriesConsumed,
+      validationBudgetExhausted: false,
+      duplicateVerdictTier: detection.verdict.tier,
+      duplicateSimilarity: detection.verdict.similarity,
+      reviewFlagged: true,
+    });
+    const extra = [suggestedFieldsNote(decision), duplicateCrossLinkNote(detection.verdict)].filter((part) => part.trim()).join('\n\n');
+    const body = reviewFlagBody(rawReport, UNCLEAR_REASON, confidence, extra);
+    const action: PendingAction = { type: 'create_issue', title, body, labels: [NEEDS_INFO], target_issue: null };
+    return {
+      action,
+      outcome: 'review_flagged',
+      verdict: detection.verdict,
+      confidence,
+      candidatesConsidered: detection.candidatesConsidered,
+      tokenUsage: detection.tokenUsage,
+      stageTimings: detection.stageTimings,
+      transientRetriesConsumed: detection.transientRetriesConsumed,
+    };
+  }
 
-    // report_type === 'bug' from here down.
+  private async routeBug(
+    decision: TriageDecision,
+    title: string,
+    rawReport: string,
+    validationRetriesConsumed: number,
+  ): Promise<RoutingResult> {
     if (decision.severity === null) {
       throw new Error('bug reports always get a severity from the extraction schema');
     }
-
     if (isBundled(decision)) {
       return this.routeBundled(decision, rawReport, validationRetriesConsumed);
     }
 
     const detection = await findDuplicateVerdict(this.port, rawReport, this.settings);
+    return this.routeByDuplicateTier(decision, title, validationRetriesConsumed, rawReport, detection);
+  }
+
+  private routeByDuplicateTier(
+    decision: TriageDecision,
+    title: string,
+    validationRetriesConsumed: number,
+    rawReport: string,
+    detection: Awaited<ReturnType<typeof findDuplicateVerdict>>,
+  ): RoutingResult {
     const verdict = detection.verdict;
     const evidence = {
       candidatesConsidered: detection.candidatesConsidered,
@@ -322,38 +429,67 @@ export class PipelineService {
     };
 
     if (verdict.tier === 'clear_duplicate') {
-      const confidence = computeConfidence({
-        validationRetriesConsumed,
-        validationBudgetExhausted: false,
-        duplicateVerdictTier: verdict.tier,
-        duplicateSimilarity: verdict.similarity,
-        reviewFlagged: false,
-      });
-      const body = duplicateCommentBody(rawReport, verdict.rationale);
-      const action: PendingAction = { type: 'comment', title: null, body, labels: [], target_issue: verdict.target_issue };
-      return { action, outcome: 'duplicate_commented', verdict, confidence, ...evidence };
+      return this.routeClearDuplicate(rawReport, validationRetriesConsumed, verdict, evidence);
     }
-
     if (verdict.tier === 'possible_duplicate') {
-      const confidence = computeConfidence({
-        validationRetriesConsumed,
-        validationBudgetExhausted: false,
-        duplicateVerdictTier: verdict.tier,
-        duplicateSimilarity: verdict.similarity,
-        reviewFlagged: true,
-      });
-      const reason =
-        `Duplicate check found a possible match to #${verdict.target_issue} but didn't clear the ` +
-        `auto-comment bar (${verdict.rationale}). Filed as a new issue, cross-linked, rather than ` +
-        'risking a false merge.';
-      const possibleDupExtra = [suggestedFieldsNote(decision), `### Possible duplicate\n\nSee #${verdict.target_issue}.`]
-        .filter((part) => part.trim())
-        .join('\n\n');
-      const body = reviewFlagBody(rawReport, reason, confidence, possibleDupExtra);
-      const action: PendingAction = { type: 'create_issue', title, body, labels: [NEEDS_TRIAGE], target_issue: null };
-      return { action, outcome: 'review_flagged', verdict, confidence, ...evidence };
+      return this.routePossibleDuplicate(decision, title, rawReport, validationRetriesConsumed, verdict, evidence);
     }
+    return this.routeNewIssue(decision, title, rawReport, validationRetriesConsumed, verdict, evidence);
+  }
 
+  private routeClearDuplicate(
+    rawReport: string,
+    validationRetriesConsumed: number,
+    verdict: DuplicateVerdict,
+    evidence: Pick<RoutingResult, 'candidatesConsidered' | 'tokenUsage' | 'stageTimings' | 'transientRetriesConsumed'>,
+  ): RoutingResult {
+    const confidence = computeConfidence({
+      validationRetriesConsumed,
+      validationBudgetExhausted: false,
+      duplicateVerdictTier: verdict.tier,
+      duplicateSimilarity: verdict.similarity,
+      reviewFlagged: false,
+    });
+    const body = duplicateCommentBody(rawReport, verdict.rationale);
+    const action: PendingAction = { type: 'comment', title: null, body, labels: [], target_issue: verdict.target_issue };
+    return { action, outcome: 'duplicate_commented', verdict, confidence, ...evidence };
+  }
+
+  private routePossibleDuplicate(
+    decision: TriageDecision,
+    title: string,
+    rawReport: string,
+    validationRetriesConsumed: number,
+    verdict: DuplicateVerdict,
+    evidence: Pick<RoutingResult, 'candidatesConsidered' | 'tokenUsage' | 'stageTimings' | 'transientRetriesConsumed'>,
+  ): RoutingResult {
+    const confidence = computeConfidence({
+      validationRetriesConsumed,
+      validationBudgetExhausted: false,
+      duplicateVerdictTier: verdict.tier,
+      duplicateSimilarity: verdict.similarity,
+      reviewFlagged: true,
+    });
+    const reason =
+      `Duplicate check found a possible match to #${verdict.target_issue} but didn't clear the ` +
+      `auto-comment bar (${verdict.rationale}). Filed as a new issue, cross-linked, rather than ` +
+      'risking a false merge.';
+    const possibleDupExtra = [suggestedFieldsNote(decision), `### Possible duplicate\n\nSee #${verdict.target_issue}.`]
+      .filter((part) => part.trim())
+      .join('\n\n');
+    const body = reviewFlagBody(rawReport, reason, confidence, possibleDupExtra);
+    const action: PendingAction = { type: 'create_issue', title, body, labels: [NEEDS_TRIAGE], target_issue: null };
+    return { action, outcome: 'review_flagged', verdict, confidence, ...evidence };
+  }
+
+  private routeNewIssue(
+    decision: TriageDecision,
+    title: string,
+    rawReport: string,
+    validationRetriesConsumed: number,
+    verdict: DuplicateVerdict,
+    evidence: Pick<RoutingResult, 'candidatesConsidered' | 'tokenUsage' | 'stageTimings' | 'transientRetriesConsumed'>,
+  ): RoutingResult {
     const confidence = computeConfidence({
       validationRetriesConsumed,
       validationBudgetExhausted: false,
@@ -362,7 +498,7 @@ export class PipelineService {
       reviewFlagged: false,
     });
     const body = bugIssueBody(rawReport, decision);
-    const labels = [decision.severity, ...decision.components];
+    const labels = [decision.severity as NonNullable<TriageDecision['severity']>, ...decision.components];
     const action: PendingAction = { type: 'create_issue', title, body, labels, target_issue: null };
     return { action, outcome: 'issue_created', verdict, confidence, ...evidence };
   }
@@ -410,41 +546,59 @@ export class PipelineService {
     }
 
     try {
-      if (action.type === 'create_issue') {
-        if (action.title === null || action.body === null) {
-          throw new Error('create_issue action missing title/body');
-        }
-        const stageStart = Date.now();
-        record.gitea_issue_number = await this.port.createIssue(action.title, action.body, action.labels);
-        const timing: StageTiming = { stage: 'gitea_create_issue', duration_ms: Date.now() - stageStart, candidate_issue_number: null };
-        record.stage_timings_ms.push(timing);
-        this.recordStage(record.report_hash, timing);
-      } else if (action.type === 'comment') {
-        if (action.target_issue === null || action.body === null) {
-          throw new Error('comment action missing target_issue/body');
-        }
-        const stageStart = Date.now();
-        await this.port.commentIssue(action.target_issue, action.body);
-        const timing: StageTiming = { stage: 'gitea_comment_issue', duration_ms: Date.now() - stageStart, candidate_issue_number: null };
-        record.stage_timings_ms.push(timing);
-        this.recordStage(record.report_hash, timing);
-        record.gitea_issue_number = action.target_issue;
-      }
+      await this.runPendingAction(record, action);
       record.status = 'completed';
       await this.save(record);
       return this.envelopeOf(record);
     } catch (e) {
-      if (e instanceof GiteaError) {
-        record.status = 'gitea_call_failed';
-        record.error = e.message;
-        await this.save(record);
-        if (!e.retryable) {
-          throw new PipelineRejectedError(record.report_hash, 'gitea_rejected', e.message);
-        }
-        throw new PipelineUnavailableError(record.report_hash, 'gitea_unavailable', e.message);
-      }
+      return this.handleActionError(record, e);
+    }
+  }
+
+  private async runPendingAction(record: DecisionRecord, action: PendingAction): Promise<void> {
+    if (action.type === 'create_issue') {
+      await this.runCreateIssueAction(record, action);
+      return;
+    }
+    if (action.type === 'comment') {
+      await this.runCommentAction(record, action);
+    }
+  }
+
+  private async runCreateIssueAction(record: DecisionRecord, action: PendingAction): Promise<void> {
+    if (action.title === null || action.body === null) {
+      throw new Error('create_issue action missing title/body');
+    }
+    const stageStart = Date.now();
+    record.gitea_issue_number = await this.port.createIssue(action.title, action.body, action.labels);
+    const timing: StageTiming = { stage: 'gitea_create_issue', duration_ms: Date.now() - stageStart, candidate_issue_number: null };
+    record.stage_timings_ms.push(timing);
+    this.recordStage(record.report_hash, timing);
+  }
+
+  private async runCommentAction(record: DecisionRecord, action: PendingAction): Promise<void> {
+    if (action.target_issue === null || action.body === null) {
+      throw new Error('comment action missing target_issue/body');
+    }
+    const stageStart = Date.now();
+    await this.port.commentIssue(action.target_issue, action.body);
+    const timing: StageTiming = { stage: 'gitea_comment_issue', duration_ms: Date.now() - stageStart, candidate_issue_number: null };
+    record.stage_timings_ms.push(timing);
+    this.recordStage(record.report_hash, timing);
+    record.gitea_issue_number = action.target_issue;
+  }
+
+  private async handleActionError(record: DecisionRecord, e: unknown): Promise<ResponseEnvelope> {
+    if (!(e instanceof GiteaError)) {
       throw e;
     }
+    record.status = 'gitea_call_failed';
+    record.error = e.message;
+    await this.save(record);
+    if (!e.retryable) {
+      throw new PipelineRejectedError(record.report_hash, 'gitea_rejected', e.message);
+    }
+    throw new PipelineUnavailableError(record.report_hash, 'gitea_unavailable', e.message);
   }
 
   private newRecord(reportHash: string, rawReport: string): DecisionRecord {
@@ -522,22 +676,42 @@ export class PipelineService {
    * silently-skipped candidates) once routing returns it.
    */
   private recordRoutingTelemetry(reportHash: string, routing: RoutingResult): void {
-    for (const timing of routing.stageTimings) {
+    this.recordRoutingStageTimings(reportHash, routing.stageTimings);
+    this.recordRoutingTokenUsage(routing.tokenUsage);
+    this.recordRoutingVerdict(routing.verdict);
+    this.recordSkippedCandidates(reportHash, routing.candidatesConsidered);
+    this.recordRoutingTransientRetries(routing.transientRetriesConsumed);
+  }
+
+  private recordRoutingStageTimings(reportHash: string, stageTimings: StageTiming[]): void {
+    for (const timing of stageTimings) {
       this.recordStage(reportHash, timing);
     }
-    for (const usage of routing.tokenUsage) {
+  }
+
+  private recordRoutingTokenUsage(tokenUsage: LlmCallUsage[]): void {
+    for (const usage of tokenUsage) {
       this.telemetry.recordTokenUsage(usage);
     }
-    if (routing.verdict !== null) {
-      this.telemetry.recordDuplicateVerdict(routing.verdict.tier);
+  }
+
+  private recordRoutingVerdict(verdict: DuplicateVerdict | null): void {
+    if (verdict !== null) {
+      this.telemetry.recordDuplicateVerdict(verdict.tier);
     }
-    for (const considered of routing.candidatesConsidered) {
+  }
+
+  private recordSkippedCandidates(reportHash: string, candidatesConsidered: DuplicateCandidateConsidered[]): void {
+    for (const considered of candidatesConsidered) {
       if (considered.same_bug === null) {
         this.telemetry.recordDuplicateJudgmentSkipped(reportHash, considered.issue_number);
       }
     }
-    if (routing.transientRetriesConsumed > 0) {
-      this.telemetry.recordRetryOutcome('duplicate_judgment', 'transient', 'succeeded', routing.transientRetriesConsumed);
+  }
+
+  private recordRoutingTransientRetries(transientRetriesConsumed: number): void {
+    if (transientRetriesConsumed > 0) {
+      this.telemetry.recordRetryOutcome('duplicate_judgment', 'transient', 'succeeded', transientRetriesConsumed);
     }
   }
 

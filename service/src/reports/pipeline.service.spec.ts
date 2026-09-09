@@ -4,6 +4,7 @@ import { PipelineService } from './pipeline.service';
 import { ExtractionValidationError } from './pipeline.errors';
 import { FakeTriagePort } from './testing/fake-triage-port';
 import { TriageDecision } from './types';
+import { FakeTelemetryRecorder } from '../telemetry/testing/fake-telemetry-recorder';
 
 function bugDecision(overrides: Partial<TriageDecision> = {}): TriageDecision {
   return {
@@ -123,10 +124,17 @@ describe('PipelineService (Ticket #38: Confidence)', () => {
     const budgets = { validation_retry_budget: 2, transient_retry_budget: 3, transient_retry_backoff_seconds: 0, duplicate_similarity_floor: 0.35 };
     port.extractionQueue = [new ExtractionValidationError('bad'), bugDecision()];
     port.candidatesByReport.set(raw, []);
+    const telemetry = new FakeTelemetryRecorder();
 
-    const envelope = await new PipelineService(port, budgets).processReport(raw);
+    const envelope = await new PipelineService(port, budgets, telemetry).processReport(raw);
 
     expect(envelope.confidence).toBe('medium');
+    expect(telemetry.retryOutcomes).toContainEqual({
+      stage: 'extraction',
+      budget: 'validation',
+      outcome: 'succeeded',
+      attempts: 1,
+    });
   });
 
   it('floors confidence at low once the validation budget is exhausted on extraction', async () => {

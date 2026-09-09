@@ -6,6 +6,7 @@ import { PipelineRejectedError, PipelineUnavailableError } from './pipeline.erro
 import { FakeTriagePort } from './testing/fake-triage-port';
 import { ExtractionValidationError, TransientAPIError } from './pipeline.errors';
 import { TriageDecision } from './types';
+import { FakeTelemetryRecorder } from '../telemetry/testing/fake-telemetry-recorder';
 
 function bugDecision(overrides: Partial<TriageDecision> = {}): TriageDecision {
   return {
@@ -168,11 +169,24 @@ describe('PipelineService idempotency', () => {
     port.extractionQueue = [new TransientAPIError('boom'), bugDecision()];
     port.candidatesByReport.set(raw, [{ issue_number: 1, title: 'existing', body: '...', similarity: 0.8, labels: [] }]);
     port.judgeDuplicateQueueByCandidate.set(1, [new TransientAPIError('boom'), { same_bug: 'no', rationale: 'different' }]);
+    const telemetry = new FakeTelemetryRecorder();
 
-    await new PipelineService(port).processReport(raw);
+    await new PipelineService(port, undefined, telemetry).processReport(raw);
 
     const record = await port.getDecisionRecord(hashReport(raw));
     expect(record!.transient_retries_consumed).toBe(2);
+    expect(telemetry.retryOutcomes).toContainEqual({
+      stage: 'duplicate_judgment',
+      budget: 'transient',
+      outcome: 'succeeded',
+      attempts: 1,
+    });
+    expect(telemetry.retryOutcomes).toContainEqual({
+      stage: 'extraction',
+      budget: 'transient',
+      outcome: 'succeeded',
+      attempts: 1,
+    });
   });
 
   it('two concurrent POSTs of the identical Raw Report only run the LLM/Gitea work once (F3 audit finding)', async () => {
