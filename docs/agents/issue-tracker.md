@@ -9,6 +9,15 @@ CLI (preferred over plain `gh`) for all operations — it mirrors `gh`'s `issue`
 > to a separate Gitea project (`acme-app`) via its REST API, not GitHub — see
 > [ADR-0004](../adr/0004-service-uses-gitea-rest-api-not-tea-cli.md).
 
+## Required-PR flow
+
+`main` is branch-protected: changes land only via a pull request that passes the
+CI quality gate (`.github/workflows/quality-gate.yml` — typecheck, lint,
+coverage, mutation, run as required status checks). Direct pushes to `main` are
+blocked, and a PR with any red check cannot be merged. See the "Quality gate"
+section of `AGENTS.md` for what each check enforces and its current pass/fail
+state.
+
 ## Setup
 
 `gh-axi` needs GitHub auth configured in the environment before it works (same
