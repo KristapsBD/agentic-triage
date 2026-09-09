@@ -10,3 +10,4 @@ async function bootstrap(): Promise<void> {
 }
 
 bootstrap();
+const y: number = 'still a type error';
