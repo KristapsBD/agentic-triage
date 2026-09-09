@@ -12,6 +12,7 @@
     "lint": "eslint \"src/**/*.ts\"",
     "lint:fix": "eslint \"src/**/*.ts\" --fix",
     "test": "jest",
+    "test:coverage": "jest --coverage",
     "test:watch": "jest --watch",
     "seed:set-a": "ts-node src/scripts/seed-set-a.ts",
     "tune:duplicate-floor": "ts-node src/scripts/tune-duplicate-floor.ts",
@@ -20,7 +21,7 @@
     "eval:set-c": "ts-node src/eval/eval-set-c.ts",
     "eval:set-d": "ts-node src/eval/eval-set-d.ts",
     "eval": "npm run verify:duplicate-thresholds && npm run eval:set-b && npm run eval:set-c",
-    "preflight": "npm run typecheck && npm run lint && npm test && npm run eval"
+    "preflight": "npm run typecheck && npm run lint && npm run test:coverage && npm run eval"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
@@ -65,6 +66,20 @@
     "moduleNameMapper": {
       "^standardwebhooks$": "<rootDir>/../test/mocks/standardwebhooks.js"
     },
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "collectCoverageFrom": [
+      "**/*.ts",
+      "!**/*.spec.ts",
+      "!eval/**",
+      "!scripts/**",
+      "!**/*.module.ts",
+      "!main.ts"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "lines": 80,
+        "branches": 80
+      }
+    }
   }
 }
