@@ -50,11 +50,19 @@ jobs:
       - run: npm run test:coverage
         working-directory: service
 
+  # Report-only: not a required status check (see docs/agents/issue-tracker.md).
+  # A full-repo Stryker run takes ~15min, which is too slow for a per-PR gate;
+  # this scopes mutants to files changed since main (--since) to keep PR
+  # turnaround fast. The full-repo mutation floor is enforced locally by
+  # `npm run preflight` and tracked separately by issues #5/#6.
   mutation:
     name: mutation
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -62,5 +70,5 @@ jobs:
           cache-dependency-path: service/package-lock.json
       - run: npm ci
         working-directory: service
-      - run: npm run test:mutation
+      - run: npx stryker run --since=origin/main
         working-directory: service
