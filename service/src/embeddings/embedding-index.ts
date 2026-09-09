@@ -17,6 +17,17 @@
  * `npm run tune:duplicate-floor` (scripts/tune-duplicate-floor.ts) --  not
  * a Jest spec, since onnxruntime-node's native addon fails an internal
  * `instanceof Float32Array` check inside Jest's sandboxed VM realm.
+ *
+ * That same crash is why this file is excluded from `stryker.conf.json`'s
+ * `mutate` list (issue #3): any Jest spec that actually calls embed()/
+ * findCandidates() -- the only way Stryker's jest-runner could score
+ * mutants here -- hits the identical VM-realm TypeError, confirmed by a
+ * throwaway spec exercising real inference. This isn't a runtime/cost
+ * carve-out (the crash is instant, not slow); there is currently no way to
+ * mutation-test this seam under Jest at all. Manual verification remains
+ * `npm run tune:duplicate-floor` (checked against Set A/B by hand, per the
+ * scoring notes above) -- run it on demand when touching this file, and
+ * expect similarity scores in the ranges documented above.
  */
 
 import { Inject, Injectable } from '@nestjs/common';

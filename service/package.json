@@ -21,7 +21,8 @@
     "eval:set-c": "ts-node src/eval/eval-set-c.ts",
     "eval:set-d": "ts-node src/eval/eval-set-d.ts",
     "eval": "npm run verify:duplicate-thresholds && npm run eval:set-b && npm run eval:set-c",
-    "preflight": "npm run typecheck && npm run lint && npm run test:coverage && npm run eval"
+    "test:mutation": "stryker run",
+    "preflight": "npm run typecheck && npm run lint && npm run test:coverage && npm run eval && npm run test:mutation"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
@@ -41,6 +42,8 @@
     "@eslint/js": "^10.0.1",
     "@nestjs/cli": "^11.0.24",
     "@nestjs/testing": "^11.2.3",
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/jest-runner": "^10.0.0",
     "@types/better-sqlite3": "^9.6.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.13.3",
