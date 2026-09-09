@@ -3,3 +3,6 @@
 node_modules/
 dist/
 coverage/
+stryker-tmp/
+reports/mutation/
+stryker.log
