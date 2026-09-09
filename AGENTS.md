@@ -49,6 +49,14 @@ suite once per mutant, and full type-checking on every run makes mutation testin
 CPU-bound on the compiler instead of the tests, causing spurious timeouts rather
 than real signal; `npm run typecheck` already covers type-checking separately.
 
+CI (issue #4) wires three of these checks — `typecheck`, `lint`, `coverage` —
+into `.github/workflows/quality-gate.yml` as required GitHub Actions status
+checks on `main` (branch protection blocks merging while any is red).
+`mutation` also runs per PR there, scoped to changed files via Stryker's
+`--since` for speed, but is report-only, not required — see
+`docs/agents/issue-tracker.md` for the required-PR flow and why `lint` being
+required means `main` is currently frozen for every PR (pending #5/#6).
+
 ### Observability stack (Prometheus/Grafana/Loki)
 
 `docker-compose.yml` runs prometheus, loki, promtail, and grafana alongside gitea/triage-service. Config lives under `observability/` (prometheus scrape config — including a `gitea` job, since Gitea's own `GITEA__metrics__ENABLED` exposes `/metrics` purely so alerting can key off `up{job="gitea"}` — loki config, promtail pipeline that ships triage-service's structured JSON logs with `report_hash`/`stage` as Loki structured metadata, and Grafana's provisioned datasources + dashboard JSON + six red-light alert rules under `provisioning/alerting/` — no manual Grafana setup). Alerting is dashboard-only (no Alertmanager/notification channel); see ADR-0009 for the six conditions and their conservative thresholds. Grafana is at `http://localhost:3001` (anonymous Viewer access enabled).
