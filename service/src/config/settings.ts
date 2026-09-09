@@ -24,21 +24,53 @@ function required(env: NodeJS.ProcessEnv, key: string): string {
   return value;
 }
 
-export function loadSettings(env: NodeJS.ProcessEnv = process.env): Settings {
+function optionalString(env: NodeJS.ProcessEnv, key: string, fallback: string): string {
+  return env[key] ?? fallback;
+}
+
+function optionalNumber(env: NodeJS.ProcessEnv, key: string, fallback: string): number {
+  return Number(env[key] ?? fallback);
+}
+
+function loadGiteaSettings(env: NodeJS.ProcessEnv) {
   return {
-    gitea_url: (env.GITEA_URL ?? 'http://localhost:3000').replace(/\/+$/, ''),
+    gitea_url: optionalString(env, 'GITEA_URL', 'http://localhost:3000').replace(/\/+$/, ''),
     gitea_repo_owner: required(env, 'GITEA_REPO_OWNER'),
     gitea_repo_name: required(env, 'GITEA_REPO_NAME'),
-    gitea_token: env.GITEA_TOKEN ?? '',
-    anthropic_api_key: env.ANTHROPIC_API_KEY ?? '',
-    anthropic_model: env.ANTHROPIC_MODEL ?? 'claude-sonnet-5',
-    decision_db_path: env.DECISION_DB_PATH ?? '/data/decisions.sqlite3',
-    embedding_model_name: env.EMBEDDING_MODEL_NAME ?? 'Xenova/all-MiniLM-L6-v2',
-    duplicate_similarity_floor: Number(env.DUPLICATE_SIMILARITY_FLOOR ?? '0.35'),
-    duplicate_top_k: Number(env.DUPLICATE_TOP_K ?? '3'),
-    validation_retry_budget: Number(env.VALIDATION_RETRY_BUDGET ?? '2'),
-    transient_retry_budget: Number(env.TRANSIENT_RETRY_BUDGET ?? '3'),
-    transient_retry_backoff_seconds: Number(env.TRANSIENT_RETRY_BACKOFF_SECONDS ?? '1.0'),
+    gitea_token: optionalString(env, 'GITEA_TOKEN', ''),
+  };
+}
+
+function loadAnthropicSettings(env: NodeJS.ProcessEnv) {
+  return {
+    anthropic_api_key: optionalString(env, 'ANTHROPIC_API_KEY', ''),
+    anthropic_model: optionalString(env, 'ANTHROPIC_MODEL', 'claude-sonnet-5'),
+  };
+}
+
+function loadDuplicateDetectionSettings(env: NodeJS.ProcessEnv) {
+  return {
+    decision_db_path: optionalString(env, 'DECISION_DB_PATH', '/data/decisions.sqlite3'),
+    embedding_model_name: optionalString(env, 'EMBEDDING_MODEL_NAME', 'Xenova/all-MiniLM-L6-v2'),
+    duplicate_similarity_floor: optionalNumber(env, 'DUPLICATE_SIMILARITY_FLOOR', '0.35'),
+    duplicate_top_k: optionalNumber(env, 'DUPLICATE_TOP_K', '3'),
+  };
+}
+
+function loadRetrySettings(env: NodeJS.ProcessEnv) {
+  return {
+    validation_retry_budget: optionalNumber(env, 'VALIDATION_RETRY_BUDGET', '2'),
+    transient_retry_budget: optionalNumber(env, 'TRANSIENT_RETRY_BUDGET', '3'),
+    transient_retry_backoff_seconds: optionalNumber(env, 'TRANSIENT_RETRY_BACKOFF_SECONDS', '1.0'),
+  };
+}
+
+export function loadSettings(env: NodeJS.ProcessEnv = process.env): Settings {
+  return {
+    ...loadGiteaSettings(env),
+    ...loadAnthropicSettings(env),
+    ...loadDuplicateDetectionSettings(env),
+    ...loadRetrySettings(env),
   };
 }
 
