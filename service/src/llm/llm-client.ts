@@ -122,21 +122,30 @@ Judge same_bug categorically:
 
 Only call the provided tool.`;
 
+function isKnownTransientErrorType(err: unknown): boolean {
+  return (
+    err instanceof Anthropic.APIConnectionError ||
+    err instanceof Anthropic.RateLimitError ||
+    err instanceof Anthropic.InternalServerError
+  );
+}
+
+function isServerAPIError(err: unknown): boolean {
+  return err instanceof Anthropic.APIError && typeof err.status === 'number' && err.status >= 500;
+}
+
+function toTransientOrRethrow(err: unknown): unknown {
+  if (isKnownTransientErrorType(err) || isServerAPIError(err)) {
+    return new TransientAPIError((err as Error).message);
+  }
+  return err;
+}
+
 async function transientWrapped<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (err) {
-    if (
-      err instanceof Anthropic.APIConnectionError ||
-      err instanceof Anthropic.RateLimitError ||
-      err instanceof Anthropic.InternalServerError
-    ) {
-      throw new TransientAPIError((err as Error).message);
-    }
-    if (err instanceof Anthropic.APIError && typeof err.status === 'number' && err.status >= 500) {
-      throw new TransientAPIError(err.message);
-    }
-    throw err;
+    throw toTransientOrRethrow(err);
   }
 }
 
