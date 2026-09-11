@@ -56,10 +56,16 @@ is red); `lint` and `mutation` also run and report on each PR but are not
 required — `lint` because ESLint checks the whole tree rather than a PR's
 diff, so making it required would deadlock the CRAP-ranked remediation
 backlog (#5), where only its last fix could ever turn the check green, and
-`mutation` (scoped to changed files via Stryker's `--since`) because a
-full-repo run is too slow for a per-PR gate. See
-`docs/agents/issue-tracker.md` for the required-PR flow, and its note for
-whoever closes #6 to add `lint` back as required once the tree is clean.
+`mutation` because a full-repo run is too slow for a per-PR gate. Stryker
+v10 dropped the `--since=<ref>` flag its predecessor had; the `mutation` job
+scopes itself instead by computing `git diff --name-only origin/main...HEAD`
+(filtered through the same exclusions as `stryker.conf.json`'s `mutate`
+globs) and passing that file list to `stryker run --mutate` — the supported
+mechanism for a stateless PR runner, since Stryker's own `--incremental`
+mode needs a cache persisted across runs that GitHub Actions doesn't provide
+here. See `docs/agents/issue-tracker.md` for the required-PR flow, and its
+note for whoever closes #6 to add `lint` back as required once the tree is
+clean.
 
 ### Observability stack (Prometheus/Grafana/Loki)
 

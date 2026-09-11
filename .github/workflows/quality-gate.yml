@@ -52,9 +52,13 @@ jobs:
 
   # Report-only: not a required status check (see docs/agents/issue-tracker.md).
   # A full-repo Stryker run takes ~15min, which is too slow for a per-PR gate;
-  # this scopes mutants to files changed since main (--since) to keep PR
-  # turnaround fast. The full-repo mutation floor is enforced locally by
-  # `npm run preflight` and tracked separately by issues #5/#6.
+  # this scopes mutants to the PR's own changed files (via `--mutate`, built
+  # from `git diff --name-only origin/main...HEAD`) to keep PR turnaround
+  # fast. Stryker v10 dropped `--since`; `--mutate` plus a stateless diff
+  # against origin/main is the supported replacement for a runner with no
+  # persisted cache between PRs (Stryker's own `--incremental` needs one).
+  # The full-repo mutation floor is enforced locally by `npm run preflight`
+  # and tracked separately by issues #5/#6.
   mutation:
     name: mutation
     runs-on: ubuntu-latest
@@ -70,5 +74,18 @@ jobs:
           cache-dependency-path: service/package-lock.json
       - run: npm ci
         working-directory: service
-      - run: npx stryker run --since=origin/main
+      - name: Determine changed source files
+        id: changed
+        working-directory: service
+        run: |
+          FILES=$(git diff --name-only --relative origin/main...HEAD -- 'src/**/*.ts' \
+            | grep -v '\.spec\.ts$' \
+            | grep -v '^src/eval/' \
+            | grep -v '^src/scripts/' \
+            | grep -v '\.module\.ts$' \
+            | grep -v '^src/main\.ts$' \
+            | grep -v '^src/embeddings/embedding-index\.ts$' || true)
+          MUTATE=$(echo "$FILES" | paste -sd, -)
+          echo "mutate=$MUTATE" >> "$GITHUB_OUTPUT"
+      - run: npx stryker run --mutate "${{ steps.changed.outputs.mutate }}" --allowEmpty
         working-directory: service
