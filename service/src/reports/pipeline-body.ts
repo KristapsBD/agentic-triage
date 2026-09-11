@@ -42,19 +42,29 @@ export function issueBody(rawReport: string, rationale: string, extra = ''): str
   return parts.join('\n\n');
 }
 
+function reproStepsList(steps: TriageDecision['repro_steps']): string {
+  if (!steps || steps.length === 0) return 'No reproduction steps provided.';
+  return steps.map((step, i) => `${i + 1}. ${redactSecrets(step)}`).join('\n');
+}
+
+// supporting_evidence is explicitly specified (llm-client.ts's SYSTEM_PROMPT)
+// to carry pasted logs/stack traces verbatim -- a second channel for a
+// reporter's raw text to reach Gitea unmodified, same as the Raw Report
+// quote below, so it gets the same secret-redaction treatment.
+function evidenceOrNone(evidence: TriageDecision['supporting_evidence']): string {
+  return evidence ? redactSecrets(evidence.trim()) : 'None.';
+}
+
+function componentsOrUnknown(components: string[]): string {
+  return components.join(', ') || 'unknown';
+}
+
 export function bugIssueBody(rawReport: string, decision: TriageDecision): string {
-  const steps =
-    decision.repro_steps && decision.repro_steps.length > 0
-      ? decision.repro_steps.map((step, i) => `${i + 1}. ${redactSecrets(step)}`).join('\n')
-      : 'No reproduction steps provided.';
-  // supporting_evidence is explicitly specified (llm-client.ts's SYSTEM_PROMPT)
-  // to carry pasted logs/stack traces verbatim -- a second channel for a
-  // reporter's raw text to reach Gitea unmodified, same as the Raw Report
-  // quote below, so it gets the same secret-redaction treatment.
-  const evidence = decision.supporting_evidence ? redactSecrets(decision.supporting_evidence.trim()) : 'None.';
+  const steps = reproStepsList(decision.repro_steps);
+  const evidence = evidenceOrNone(decision.supporting_evidence);
   const rationale =
     `**Severity:** ${decision.severity}\n` +
-    `**Components:** ${decision.components.join(', ') || 'unknown'}\n\n` +
+    `**Components:** ${componentsOrUnknown(decision.components)}\n\n` +
     `### Reproduction steps\n\n${steps}\n\n` +
     `### Supporting evidence\n\n${evidence}`;
   return issueBody(rawReport, rationale);
@@ -91,11 +101,15 @@ export function duplicateCrossLinkNote(verdict: DuplicateVerdict): string {
  * design deliberately withholds labels the pipeline isn't confident enough
  * in to apply automatically (ADR-0006).
  */
-export function suggestedFieldsNote(decision: Pick<TriageDecision, 'severity' | 'components'>): string {
-  const hasComponents = decision.components.length > 0;
-  if (decision.severity === null && !hasComponents) return '';
+function suggestedFieldsLines(decision: Pick<TriageDecision, 'severity' | 'components'>): string[] {
   const lines: string[] = [];
   if (decision.severity !== null) lines.push(`**Suggested severity:** ${decision.severity}`);
-  if (hasComponents) lines.push(`**Suggested components:** ${decision.components.join(', ')}`);
+  if (decision.components.length > 0) lines.push(`**Suggested components:** ${decision.components.join(', ')}`);
+  return lines;
+}
+
+export function suggestedFieldsNote(decision: Pick<TriageDecision, 'severity' | 'components'>): string {
+  const lines = suggestedFieldsLines(decision);
+  if (lines.length === 0) return '';
   return `### Extracted, unconfirmed\n\n${lines.join('\n')}`;
 }
