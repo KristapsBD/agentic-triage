@@ -52,7 +52,7 @@ function retriesConsumedResult(inputs: ConfidenceInputs): ConfidenceResult | nul
   if (inputs.validationRetriesConsumed <= 0) {
     return null;
   }
-  const band = BANDS[Math.min(inputs.validationRetriesConsumed, BANDS.length - 1)];
+  const band = BANDS[Math.min(BANDS.length - 1, inputs.validationRetriesConsumed)];
   const plural = inputs.validationRetriesConsumed === 1 ? 'retry' : 'retries';
   return {
     band,
