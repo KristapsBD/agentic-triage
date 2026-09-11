@@ -38,43 +38,72 @@ const BANDS: Confidence[] = ['high', 'medium', 'low'];
 // independently-hardcoded copy of the same evidence.
 export const CLEAR_DUPLICATE_CONFIDENCE_FLOOR = 0.5;
 
-export function computeConfidence(inputs: ConfidenceInputs): ConfidenceResult {
-  if (inputs.validationBudgetExhausted) {
-    return {
-      band: 'low',
-      reason: 'the validation retry budget was exhausted before the model produced valid structured output',
-    };
+function budgetExhaustedResult(inputs: ConfidenceInputs): ConfidenceResult | null {
+  if (!inputs.validationBudgetExhausted) {
+    return null;
   }
+  return {
+    band: 'low',
+    reason: 'the validation retry budget was exhausted before the model produced valid structured output',
+  };
+}
 
-  if (inputs.validationRetriesConsumed > 0) {
-    const band = BANDS[Math.min(inputs.validationRetriesConsumed, BANDS.length - 1)];
-    const plural = inputs.validationRetriesConsumed === 1 ? 'retry' : 'retries';
-    return {
-      band,
-      reason: `the model needed ${inputs.validationRetriesConsumed} validation ${plural} before its output passed validation`,
-    };
+function retriesConsumedResult(inputs: ConfidenceInputs): ConfidenceResult | null {
+  if (inputs.validationRetriesConsumed <= 0) {
+    return null;
   }
+  const band = BANDS[Math.min(inputs.validationRetriesConsumed, BANDS.length - 1)];
+  const plural = inputs.validationRetriesConsumed === 1 ? 'retry' : 'retries';
+  return {
+    band,
+    reason: `the model needed ${inputs.validationRetriesConsumed} validation ${plural} before its output passed validation`,
+  };
+}
 
-  if (inputs.duplicateVerdictTier === 'possible_duplicate') {
-    return { band: 'medium', reason: "a possible duplicate was found but wasn't confident enough to auto-merge" };
+function possibleDuplicateResult(inputs: ConfidenceInputs): ConfidenceResult | null {
+  if (inputs.duplicateVerdictTier !== 'possible_duplicate') {
+    return null;
   }
+  return { band: 'medium', reason: "a possible duplicate was found but wasn't confident enough to auto-merge" };
+}
 
-  if (inputs.reviewFlagged) {
-    return { band: 'medium', reason: 'this report was routed to human review' };
+function reviewFlaggedResult(inputs: ConfidenceInputs): ConfidenceResult | null {
+  if (!inputs.reviewFlagged) {
+    return null;
   }
+  return { band: 'medium', reason: 'this report was routed to human review' };
+}
 
-  if (
+function thinClearDuplicateResult(inputs: ConfidenceInputs): ConfidenceResult | null {
+  const isThinClearDuplicate =
     inputs.duplicateVerdictTier === 'clear_duplicate' &&
     inputs.duplicateSimilarity !== null &&
-    inputs.duplicateSimilarity < CLEAR_DUPLICATE_CONFIDENCE_FLOOR
-  ) {
-    return {
-      band: 'medium',
-      reason:
-        `matched as a clear duplicate at similarity ${inputs.duplicateSimilarity.toFixed(4)}, ` +
-        `below the ${CLEAR_DUPLICATE_CONFIDENCE_FLOOR} clear-duplicate band floor -- treat this merge as less certain`,
-    };
+    inputs.duplicateSimilarity < CLEAR_DUPLICATE_CONFIDENCE_FLOOR;
+  if (!isThinClearDuplicate) {
+    return null;
   }
+  return {
+    band: 'medium',
+    reason:
+      `matched as a clear duplicate at similarity ${(inputs.duplicateSimilarity as number).toFixed(4)}, ` +
+      `below the ${CLEAR_DUPLICATE_CONFIDENCE_FLOOR} clear-duplicate band floor -- treat this merge as less certain`,
+  };
+}
 
+const CONFIDENCE_RULES: Array<(inputs: ConfidenceInputs) => ConfidenceResult | null> = [
+  budgetExhaustedResult,
+  retriesConsumedResult,
+  possibleDuplicateResult,
+  reviewFlaggedResult,
+  thinClearDuplicateResult,
+];
+
+export function computeConfidence(inputs: ConfidenceInputs): ConfidenceResult {
+  for (const rule of CONFIDENCE_RULES) {
+    const result = rule(inputs);
+    if (result !== null) {
+      return result;
+    }
+  }
   return { band: 'high', reason: 'clean extraction with no validation retries or unresolved ambiguity' };
 }
