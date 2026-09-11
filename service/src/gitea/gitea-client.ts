@@ -37,9 +37,14 @@ export class GiteaClient {
   }
 
   private async request(method: string, path: string, body?: unknown): Promise<Response> {
-    let response: Response;
+    const response = await this.fetchResponse(method, path, body);
+    await this.throwIfErrorStatus(response);
+    return response;
+  }
+
+  private async fetchResponse(method: string, path: string, body?: unknown): Promise<Response> {
     try {
-      response = await fetch(`${this.base}${path}`, {
+      return await fetch(`${this.base}${path}`, {
         method,
         headers: this.headers,
         body: body === undefined ? undefined : JSON.stringify(body),
@@ -48,13 +53,15 @@ export class GiteaClient {
     } catch (err) {
       throw new GiteaError(`Gitea request failed: ${(err as Error).message}`);
     }
+  }
+
+  private async throwIfErrorStatus(response: Response): Promise<void> {
     if (response.status >= 500) {
       throw new GiteaError(`Gitea returned ${response.status}: ${(await response.text()).slice(0, 300)}`, response.status);
     }
     if (response.status >= 400) {
       throw new GiteaError(`Gitea rejected request (${response.status}): ${(await response.text()).slice(0, 300)}`, response.status);
     }
-    return response;
   }
 
   private async labelIds(): Promise<Map<string, number>> {
