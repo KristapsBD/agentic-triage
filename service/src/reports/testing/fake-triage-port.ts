@@ -20,6 +20,10 @@ export interface PortCall {
 // Tests that do care push onto extractionUsageQueue/judgeDuplicateUsageByCandidate.
 const DEFAULT_USAGE: TokenUsage = { input_tokens: 0, output_tokens: 0 };
 
+function normalizeFeedback(feedback?: string | null): string | null {
+  return feedback ?? null;
+}
+
 export class FakeTriagePort implements TriagePort {
   calls: PortCall[] = [];
   openIssues: GiteaIssue[] = [];
@@ -62,7 +66,12 @@ export class FakeTriagePort implements TriagePort {
   }
 
   async extract(rawReport: string, feedback?: string | null): Promise<{ decision: TriageDecision; usage: TokenUsage }> {
-    this.calls.push({ op: 'extract', args: [rawReport, feedback ?? null] });
+    this.calls.push({ op: 'extract', args: [rawReport, normalizeFeedback(feedback)] });
+    const decision = this.dequeueExtraction();
+    return { decision, usage: this.dequeueUsage(this.extractionUsageQueue) };
+  }
+
+  private dequeueExtraction(): TriageDecision {
     const item = this.extractionQueue.shift();
     if (item === undefined) {
       throw new Error('FakeTriagePort.extractionQueue exhausted');
@@ -70,7 +79,11 @@ export class FakeTriagePort implements TriagePort {
     if (item instanceof Error) {
       throw item;
     }
-    return { decision: item, usage: this.extractionUsageQueue.shift() ?? DEFAULT_USAGE };
+    return item;
+  }
+
+  private dequeueUsage(queue: TokenUsage[] | undefined): TokenUsage {
+    return queue?.shift() ?? DEFAULT_USAGE;
   }
 
   async findCandidates(rawReport: string, _openIssues: GiteaIssue[]): Promise<DuplicateCandidate[]> {
@@ -83,21 +96,34 @@ export class FakeTriagePort implements TriagePort {
     candidate: DuplicateCandidate,
     feedback?: string | null,
   ): Promise<{ judgment: DuplicateJudgment; usage: TokenUsage }> {
-    this.calls.push({ op: 'judge_duplicate', args: [rawReport, candidate.issue_number, feedback ?? null] });
-    const usage = this.judgeDuplicateUsageByCandidate.get(candidate.issue_number)?.shift() ?? DEFAULT_USAGE;
-    const queue = this.judgeDuplicateQueueByCandidate.get(candidate.issue_number);
-    if (queue && queue.length > 0) {
-      const item = queue.shift() as DuplicateJudgment | Error;
-      if (item instanceof Error) {
-        throw item;
-      }
-      return { judgment: item, usage };
-    }
-    const judgment = this.judgmentsByCandidate.get(candidate.issue_number);
-    if (!judgment) {
-      throw new Error(`no scripted judgment for candidate #${candidate.issue_number}`);
-    }
+    this.calls.push({ op: 'judge_duplicate', args: [rawReport, candidate.issue_number, normalizeFeedback(feedback)] });
+    const usage = this.dequeueUsage(this.judgeDuplicateUsageByCandidate.get(candidate.issue_number));
+    const judgment = this.resolveJudgment(candidate.issue_number);
     return { judgment, usage };
+  }
+
+  private resolveJudgment(candidateNumber: number): DuplicateJudgment {
+    const queued = this.dequeueQueuedJudgment(candidateNumber);
+    if (queued) {
+      return queued;
+    }
+    const judgment = this.judgmentsByCandidate.get(candidateNumber);
+    if (!judgment) {
+      throw new Error(`no scripted judgment for candidate #${candidateNumber}`);
+    }
+    return judgment;
+  }
+
+  private dequeueQueuedJudgment(candidateNumber: number): DuplicateJudgment | undefined {
+    const queue = this.judgeDuplicateQueueByCandidate.get(candidateNumber);
+    if (!queue || queue.length === 0) {
+      return undefined;
+    }
+    const item = queue.shift() as DuplicateJudgment | Error;
+    if (item instanceof Error) {
+      throw item;
+    }
+    return item;
   }
 
   async saveDecisionRecord(record: DecisionRecord): Promise<void> {
