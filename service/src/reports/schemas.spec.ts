@@ -6,7 +6,7 @@
  */
 
 import { ExtractionValidationError } from './pipeline.errors';
-import { parseTriageDecision } from './schemas';
+import { isBundled, parseDuplicateJudgment, parseTriageDecision } from './schemas';
 
 describe('parseTriageDecision', () => {
   it('fails validation when a bug report is missing severity', () => {
@@ -62,5 +62,69 @@ describe('parseTriageDecision', () => {
       expect(e).toBeInstanceOf(ExtractionValidationError);
       expect((e as Error).message).toMatch(/severity/);
     }
+  });
+
+  it('rejects a blank title', () => {
+    try {
+      parseTriageDecision({ title: '   ', report_type: 'unclear' });
+      throw new Error('expected parseTriageDecision to throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(ExtractionValidationError);
+      expect((e as Error).message).toMatch(/title/);
+    }
+  });
+
+  it('defaults optional fields when omitted', () => {
+    const decision = parseTriageDecision({ title: 't', report_type: 'unclear' });
+    expect(decision.severity).toBeNull();
+    expect(decision.components).toEqual([]);
+    expect(decision.repro_steps).toBeNull();
+    expect(decision.supporting_evidence).toBeNull();
+    expect(decision.distinct_issues).toEqual([]);
+  });
+});
+
+describe('parseDuplicateJudgment', () => {
+  it('parses a valid judgment and defaults rationale when omitted', () => {
+    const judgment = parseDuplicateJudgment({ same_bug: 'yes' });
+    expect(judgment.same_bug).toBe('yes');
+    expect(judgment.rationale).toBe('');
+  });
+
+  it('preserves a provided rationale', () => {
+    const judgment = parseDuplicateJudgment({ same_bug: 'no', rationale: 'different stack traces' });
+    expect(judgment.rationale).toBe('different stack traces');
+  });
+
+  it('rejects an invalid same_bug value', () => {
+    try {
+      parseDuplicateJudgment({ same_bug: 'maybe' });
+      throw new Error('expected parseDuplicateJudgment to throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(ExtractionValidationError);
+      expect((e as Error).message).toMatch(/same_bug/);
+    }
+  });
+
+  it('rejects a missing required field', () => {
+    expect(() => parseDuplicateJudgment({})).toThrow(ExtractionValidationError);
+  });
+});
+
+describe('isBundled', () => {
+  it('is false when there are zero or one distinct issues', () => {
+    const single = parseTriageDecision({ title: 't', report_type: 'unclear', distinct_issues: ['a'] });
+    const none = parseTriageDecision({ title: 't', report_type: 'unclear' });
+    expect(isBundled(single)).toBe(false);
+    expect(isBundled(none)).toBe(false);
+  });
+
+  it('is true when there is more than one distinct issue', () => {
+    const decision = parseTriageDecision({
+      title: 't',
+      report_type: 'unclear',
+      distinct_issues: ['a', 'b'],
+    });
+    expect(isBundled(decision)).toBe(true);
   });
 });
