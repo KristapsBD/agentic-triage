@@ -67,6 +67,10 @@ here. See `docs/agents/issue-tracker.md` for the required-PR flow, and its
 note for whoever closes #6 to add `lint` back as required once the tree is
 clean.
 
+Since going public, only issues authored by the repo owner (`KristapsBD`) are
+ever picked up as actionable work; `.github/workflows/external-issue-guard.yml`
+auto-closes everything else (see `docs/agents/issue-tracker.md`).
+
 ### Observability stack (Prometheus/Grafana/Loki)
 
 `docker-compose.yml` runs prometheus, loki, promtail, and grafana alongside gitea/triage-service. Config lives under `observability/` (prometheus scrape config — including a `gitea` job, since Gitea's own `GITEA__metrics__ENABLED` exposes `/metrics` purely so alerting can key off `up{job="gitea"}` — loki config, promtail pipeline that ships triage-service's structured JSON logs with `report_hash`/`stage` as Loki structured metadata, and Grafana's provisioned datasources + dashboard JSON + six red-light alert rules under `provisioning/alerting/` — no manual Grafana setup). Alerting is dashboard-only (no Alertmanager/notification channel); see ADR-0009 for the six conditions and their conservative thresholds. Grafana is at `http://localhost:3001` (anonymous Viewer access enabled).
