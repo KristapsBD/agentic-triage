@@ -1,0 +1,38 @@
+name: External issue guard
+
+# This repo is a private R&D project: only issues authored by the repo owner
+# are ever picked up as work (see docs/agents/issue-tracker.md and AGENTS.md's
+# "Quality gate" section). This workflow enforces that automatically by
+# closing any issue opened by someone else, with a brief explanatory comment.
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  guard:
+    name: close non-owner issue
+    runs-on: ubuntu-latest
+    if: github.event.issue.user.login != github.repository_owner
+    steps:
+      - name: Comment and close
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.issue.number;
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number,
+              body: "This is a private R&D project. External issue submissions aren't reviewed or actioned and are closed automatically. Feel free to open a PR instead if you have a concrete fix.",
+            });
+            await github.rest.issues.update({
+              owner,
+              repo,
+              issue_number,
+              state: "closed",
+            });

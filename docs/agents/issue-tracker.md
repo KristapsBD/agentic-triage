@@ -33,6 +33,13 @@ is clean repo-wide, add `lint` back to `main`'s required status checks
 `required_status_checks.contexts` including `lint`) — it was dropped only to
 avoid the deadlock above, not because it's meant to stay optional forever.
 
+## External issues
+
+Only issues authored by the repo owner are ever picked up as actionable work.
+`.github/workflows/external-issue-guard.yml` enforces this automatically —
+any issue opened by someone else is closed immediately with an explanatory
+comment.
+
 ## Setup
 
 `gh-axi` needs GitHub auth configured in the environment before it works (same
