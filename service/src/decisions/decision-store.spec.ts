@@ -120,6 +120,12 @@ describe('DecisionStore', () => {
     expect(store.get('hash-1')!.gitea_issue_number).toBe(record.gitea_issue_number);
   });
 
+  it('get() returns null for a report_hash with no record', () => {
+    const store = new DecisionStore({ ...BASE_SETTINGS, decision_db_path: dbPath });
+
+    expect(store.get('no-such-hash')).toBeNull();
+  });
+
   it('new fields stay nullable/additive -- an update overwrites the row rather than merging', () => {
     const store = new DecisionStore({ ...BASE_SETTINGS, decision_db_path: dbPath });
     const pending: DecisionRecord = { ...sampleRecord(), status: 'pending', token_usage: [], stage_timings_ms: [] };
