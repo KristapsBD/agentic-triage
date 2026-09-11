@@ -46,6 +46,17 @@ describe('PrometheusTelemetryRecorder', () => {
     expect(line).toMatchObject({ report_hash: 'abc123', stage: 'extraction', duration_ms: 5 });
   });
 
+  it('emits a structured JSON log line with no extra fields when none are given', () => {
+    const recorder = new PrometheusTelemetryRecorder();
+
+    recorder.logStage('abc123', 'extraction');
+
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    const line = JSON.parse(logSpy.mock.calls[0][0] as string);
+    expect(line).toMatchObject({ report_hash: 'abc123', stage: 'extraction' });
+    expect(Object.keys(line).sort()).toEqual(['level', 'report_hash', 'stage', 'time']);
+  });
+
   it('logs the silent-skip event alongside the counter', () => {
     const recorder = new PrometheusTelemetryRecorder();
 
