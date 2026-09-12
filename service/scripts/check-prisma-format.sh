@@ -11,10 +11,9 @@ TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
 
 cp "$SCHEMA" "$TMP"
-npx prisma format --schema "$SCHEMA" >/dev/null
+npx prisma format --schema "$TMP" >/dev/null
 
 if ! diff -q "$TMP" "$SCHEMA" >/dev/null; then
-  cp "$TMP" "$SCHEMA"
   echo "$SCHEMA is not formatted; run 'npx prisma format --schema $SCHEMA'" >&2
   exit 1
 fi
