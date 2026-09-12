@@ -71,6 +71,26 @@ Since going public, only issues authored by the repo owner (`KristapsBD`) are
 ever picked up as actionable work; `.github/workflows/external-issue-guard.yml`
 auto-closes everything else (see `docs/agents/issue-tracker.md`).
 
+### Postgres + Prisma (decision persistence)
+
+`docker-compose.yml`'s `postgres` service (port 5432 published to the host)
+backs `service`'s Prisma schema (`service/prisma/schema.prisma`), which
+models the `Decision` header table plus `DuplicateCandidate`, `TokenUsage`,
+and `StageTiming` child tables (each cascading delete with its parent) per
+issue #57/#58 — this replaces the old single-blob shape with one row/table
+per concept. `DATABASE_URL` (see `.env.example`) is pinned to Prisma
+**6.x** deliberately, not 7's adapter-based config: 7 requires picking a
+driver adapter package up front, a decision issue #57 never made, and 6.x's
+classic `url = env("DATABASE_URL")` schema convention is what nearly every
+existing Prisma doc/example assumes. As of #58, this schema is
+infrastructure only — nothing in the application reads/writes through it
+yet (`service/src/decisions/decision-store.ts` still owns persistence via
+SQLite); that cutover is tracked separately by #59. Because the repo's own
+`.env` lives at the project root rather than inside `service/`, running
+Prisma CLI commands manually from `service/` needs `DATABASE_URL` set
+explicitly (e.g. `DATABASE_URL=... npx prisma migrate dev`) or a local
+`service/.env` symlink to `../.env` (gitignored, not checked in).
+
 ### Observability stack (Prometheus/Grafana/Loki)
 
 `docker-compose.yml` runs prometheus, loki, promtail, and grafana alongside gitea/triage-service. Config lives under `observability/` (prometheus scrape config — including a `gitea` job, since Gitea's own `GITEA__metrics__ENABLED` exposes `/metrics` purely so alerting can key off `up{job="gitea"}` — loki config, promtail pipeline that ships triage-service's structured JSON logs with `report_hash`/`stage` as Loki structured metadata, and Grafana's provisioned datasources + dashboard JSON + six red-light alert rules under `provisioning/alerting/` — no manual Grafana setup). Alerting is dashboard-only (no Alertmanager/notification channel); see ADR-0009 for the six conditions and their conservative thresholds. Grafana is at `http://localhost:3001` (anonymous Viewer access enabled).
