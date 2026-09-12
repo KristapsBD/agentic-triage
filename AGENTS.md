@@ -28,10 +28,20 @@ tables (each cascade-deleted with its parent), mirroring `service/src/reports/ty
 `DecisionRecord` shape; the initial migration is checked into `service/prisma/migrations/`.
 `service/prisma.config.ts` loads `DATABASE_URL` from the repo-root `.env` rather than a
 service-local one, matching every other env-driven script's convention (see
-`service/src/eval/*.ts`, `service/src/scripts/*.ts`). This is infrastructure only (issue
-#58): nothing in the application reads from this database yet. The still-live SQLite
-`DecisionStore` (`service/src/decisions/decision-store.ts`) remains the real persistence
-path until issue #59 wires a `PrismaService` up to the existing `TriagePort` interface.
+`service/src/eval/*.ts`, `service/src/scripts/*.ts`), falling back to the same
+`postgresql://triage:triage@localhost:5432/triage?schema=public` default `Settings`
+(`service/src/config/settings.ts`) uses when unset — `prisma generate` needs a
+syntactically valid URL but never a reachable database, and CI/a clean `npm ci`
+has no `.env`. `service/package.json`'s `postinstall` script runs `prisma generate`
+explicitly rather than relying on `@prisma/client`'s own postinstall hook, which is
+unreliable under `npm ci`'s install ordering and silently leaves the generic,
+model-less stub client in place (issue #59's CI investigation: this produced
+TS2305/TS2694 "no exported member" errors for every `Prisma.*` type the mapper
+uses, on a fresh install only — a local dev tree with an already-generated client
+never surfaces it). Issue #59 wired a `PrismaService`
+(`service/src/decisions/prisma.service.ts`) up to `DecisionStore`
+(`service/src/decisions/decision-store.ts`), which is now the real persistence path for
+`TriagePort`; the old SQLite-backed implementation and `better-sqlite3` are gone.
 Nothing applies the checked-in init migration automatically (not docker-compose,
 not `package.json`, not the Makefile), so a fresh `postgres` volume starts empty —
 run `make migrate` (wraps `prisma migrate deploy`). `make migrate-status` wraps
@@ -73,6 +83,13 @@ incompatibility — any Jest spec that exercises its real model inference crashe
 Jest's sandboxed VM realm (confirmed by measurement, not assumed; see the file's
 own docblock). Its existing manual check, `npm run tune:duplicate-floor`, is the
 only verification path for that module and isn't run automatically by `preflight`.
+`src/decisions/decision-store.ts`, `decision-record.mapper.ts`, and
+`prisma.service.ts` (issue #59) are excluded from `mutate` the same way, for the
+same reason: their only test, `decision-store.spec.ts`, provisions a real
+testcontainers Postgres per suite run, and Stryker's per-mutant re-run model pays
+that container-startup/migration cost on every single mutant — measured directly
+(`npx stryker run --mutate src/decisions/decision-store.ts`), every mutant timed
+out rather than being killed or surviving.
 `stryker run` also uses `service/jest.stryker.config.js` (transpile-only ts-jest,
 via `isolatedModules`) rather than the normal Jest config — Stryker re-runs the
 suite once per mutant, and full type-checking on every run makes mutation testing

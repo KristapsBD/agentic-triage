@@ -7,7 +7,6 @@ export interface Settings {
   gitea_token: string;
   anthropic_api_key: string;
   anthropic_model: string;
-  decision_db_path: string;
   database_url: string;
   embedding_model_name: string;
   duplicate_similarity_floor: number;
@@ -51,9 +50,6 @@ function loadAnthropicSettings(env: NodeJS.ProcessEnv) {
 
 function loadDuplicateDetectionSettings(env: NodeJS.ProcessEnv) {
   return {
-    decision_db_path: optionalString(env, 'DECISION_DB_PATH', '/data/decisions.sqlite3'),
-    // Prisma convention; not yet consumed by application code (issue #58 is
-    // infrastructure only -- see issue #59 for wiring a PrismaService up to it).
     database_url: optionalString(
       env,
       'DATABASE_URL',

@@ -13,7 +13,10 @@
     "!src/scripts/**",
     "!src/**/*.module.ts",
     "!src/main.ts",
-    "!src/embeddings/embedding-index.ts"
+    "!src/embeddings/embedding-index.ts",
+    "!src/decisions/decision-store.ts",
+    "!src/decisions/decision-record.mapper.ts",
+    "!src/decisions/prisma.service.ts"
   ],
   "coverageAnalysis": "perTest",
   "thresholds": {

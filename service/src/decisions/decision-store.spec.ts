@@ -1,33 +1,30 @@
 /**
- * Ticket #40: the full per-request evidence trail (token usage, every
- * Duplicate Candidate considered, per-stage timings, transient retry count)
- * round-trips through DecisionStore and is queryable directly from SQLite --
- * not just reconstructable through the store's own .get().
+ * Ticket #40 (carried over into issue #59): the full per-request evidence
+ * trail (token usage, every Duplicate Candidate considered, per-stage
+ * timings, transient retry count) round-trips through DecisionStore and is
+ * queryable directly from Postgres -- not just reconstructable through the
+ * store's own .get().
+ *
+ * Issue #59: runs against a real, ephemeral Postgres instance provisioned by
+ * testcontainers for this test run (same "real database, not mocked" spirit
+ * as the old real-SQLite-temp-file approach), with the checked-in Prisma
+ * migrations applied once via `prisma migrate deploy`. Individual tests are
+ * isolated by truncating every table (cascading from `decisions`, whose
+ * children are all `ON DELETE CASCADE`) rather than a fresh container per
+ * test, since spinning up a container per test would dominate the run time.
  */
 
-import { mkdtempSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
-import Database from 'better-sqlite3';
+import { execFileSync } from 'child_process';
+import { resolve } from 'path';
+import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { Settings } from '../config/settings';
 import { DecisionRecord } from '../reports/types';
 import { DecisionStore } from './decision-store';
+import { PrismaService } from './prisma.service';
 
-const BASE_SETTINGS: Omit<Settings, 'decision_db_path'> = {
-  gitea_url: 'http://gitea.local',
-  gitea_repo_owner: 'triageadmin',
-  gitea_repo_name: 'acme-app',
-  gitea_token: 'x',
-  anthropic_api_key: 'test-key',
-  anthropic_model: 'claude-sonnet-5',
-  database_url: 'postgresql://triage:triage@localhost:5432/triage?schema=public',
-  embedding_model_name: 'Xenova/all-MiniLM-L6-v2',
-  duplicate_similarity_floor: 0.35,
-  duplicate_top_k: 3,
-  validation_retry_budget: 2,
-  transient_retry_budget: 3,
-  transient_retry_backoff_seconds: 0,
-};
+jest.setTimeout(180_000);
+
+const SERVICE_ROOT = resolve(__dirname, '../..');
 
 function sampleRecord(): DecisionRecord {
   return {
@@ -83,77 +80,121 @@ function sampleRecord(): DecisionRecord {
 }
 
 describe('DecisionStore', () => {
-  let dir: string;
-  let dbPath: string;
+  let container: StartedPostgreSqlContainer;
+  let prisma: PrismaService;
+  let store: DecisionStore;
 
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'decision-store-test-'));
-    dbPath = join(dir, 'decisions.sqlite3');
+  beforeAll(async () => {
+    container = await new PostgreSqlContainer('postgres:16-alpine').start();
+    const databaseUrl = container.getConnectionUri();
+
+    execFileSync('npx', ['prisma', 'migrate', 'deploy'], {
+      cwd: SERVICE_ROOT,
+      env: { ...process.env, DATABASE_URL: databaseUrl },
+      stdio: 'inherit',
+    });
+
+    prisma = new PrismaService({ database_url: databaseUrl } as unknown as Settings);
+    store = new DecisionStore(prisma);
   });
 
-  afterEach(() => {
-    rmSync(dir, { recursive: true, force: true });
+  afterAll(async () => {
+    await prisma?.$disconnect();
+    await container?.stop();
   });
 
-  it('round-trips the full evidence trail through .get()', () => {
-    const store = new DecisionStore({ ...BASE_SETTINGS, decision_db_path: dbPath });
+  beforeEach(async () => {
+    await prisma.$executeRawUnsafe('TRUNCATE TABLE "decisions" RESTART IDENTITY CASCADE');
+  });
+
+  it('round-trips the full evidence trail through .get()', async () => {
     const record = sampleRecord();
 
-    store.save(record);
+    await store.save(record);
 
-    expect(store.get('hash-1')).toEqual(record);
+    expect(await store.get('hash-1')).toEqual(record);
   });
 
-  it('persists the full narrative queryable directly from SQLite for a past report_hash', () => {
-    const store = new DecisionStore({ ...BASE_SETTINGS, decision_db_path: dbPath });
+  it('round-trips a non-null pending_action', async () => {
+    const record: DecisionRecord = {
+      ...sampleRecord(),
+      status: 'processing',
+      outcome: null,
+      pending_action: {
+        type: 'create_issue',
+        title: 'New issue',
+        body: 'body text',
+        labels: ['bug'],
+        target_issue: null,
+      },
+    };
+
+    await store.save(record);
+
+    expect(await store.get('hash-1')).toEqual(record);
+  });
+
+  it('persists the full narrative queryable directly from Postgres for a past report_hash', async () => {
     const record = sampleRecord();
-    store.save(record);
+    await store.save(record);
 
-    const raw = new Database(dbPath);
-    const row = raw
-      .prepare('SELECT payload FROM decision_records WHERE report_hash = ?')
-      .get('hash-1') as { payload: string };
-    raw.close();
+    const row = await prisma.decision.findUniqueOrThrow({
+      where: { reportHash: 'hash-1' },
+      include: { duplicateCandidates: true, tokenUsages: true, stageTimings: true },
+    });
 
-    const persisted = JSON.parse(row.payload) as DecisionRecord;
-    expect(persisted.transient_retries_consumed).toBe(2);
-    expect(persisted.duplicate_candidates_considered).toEqual(
-      record.duplicate_candidates_considered,
-    );
-    expect(persisted.token_usage).toEqual(record.token_usage);
-    expect(persisted.stage_timings_ms).toEqual(record.stage_timings_ms);
+    expect(row.transientRetriesConsumed).toBe(2);
+    expect(
+      row.duplicateCandidates.map((c) => ({
+        issue_number: c.issueNumber,
+        similarity: c.similarity,
+        same_bug: c.sameBug,
+      })),
+    ).toEqual(record.duplicate_candidates_considered);
+    expect(
+      row.tokenUsages.map((t) => ({
+        call: t.call,
+        candidate_issue_number: t.candidateIssueNumber,
+        input_tokens: t.inputTokens,
+        output_tokens: t.outputTokens,
+      })),
+    ).toEqual(record.token_usage);
+    expect(
+      row.stageTimings.map((s) => ({
+        stage: s.stage,
+        duration_ms: s.durationMs,
+        candidate_issue_number: s.candidateIssueNumber,
+      })),
+    ).toEqual(record.stage_timings_ms);
   });
 
-  it('tryClaim inserts only the first call for a report_hash and reports the loser (F3 audit finding)', () => {
-    const store = new DecisionStore({ ...BASE_SETTINGS, decision_db_path: dbPath });
+  it('tryClaim inserts only the first call for a report_hash and reports the loser (F3 audit finding)', async () => {
     const record = { ...sampleRecord(), status: 'pending' as const };
 
-    expect(store.tryClaim(record)).toBe(true);
-    expect(store.tryClaim({ ...record, gitea_issue_number: 999 })).toBe(false);
+    expect(await store.tryClaim(record)).toBe(true);
+    expect(await store.tryClaim({ ...record, gitea_issue_number: 999 })).toBe(false);
 
     // the loser's payload never overwrote the winner's row
-    expect(store.get('hash-1')!.gitea_issue_number).toBe(record.gitea_issue_number);
+    const winner = await store.get('hash-1');
+    expect(winner!.gitea_issue_number).toBe(record.gitea_issue_number);
   });
 
-  it('get() returns null for a report_hash with no record', () => {
-    const store = new DecisionStore({ ...BASE_SETTINGS, decision_db_path: dbPath });
-
-    expect(store.get('no-such-hash')).toBeNull();
+  it('get() returns null for a report_hash with no record', async () => {
+    expect(await store.get('no-such-hash')).toBeNull();
   });
 
-  it('new fields stay nullable/additive -- an update overwrites the row rather than merging', () => {
-    const store = new DecisionStore({ ...BASE_SETTINGS, decision_db_path: dbPath });
+  it('new fields stay nullable/additive -- an update overwrites the row rather than merging', async () => {
     const pending: DecisionRecord = {
       ...sampleRecord(),
       status: 'pending',
       token_usage: [],
       stage_timings_ms: [],
     };
-    store.save(pending);
+    await store.save(pending);
 
     const completed = sampleRecord();
-    store.save(completed);
+    await store.save(completed);
 
-    expect(store.get('hash-1')).toEqual(completed);
+    expect(await store.get('hash-1')).toEqual(completed);
   });
 });
