@@ -587,4 +587,10 @@ async function run(): Promise<number> {
   return passed === totalAssertable ? 0 : 1;
 }
 
-run().then((code) => process.exit(code));
+run().then(
+  (code) => process.exit(code),
+  (err: unknown) => {
+    console.error(err);
+    process.exit(1);
+  },
+);
