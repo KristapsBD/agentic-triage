@@ -1,0 +1,27 @@
+# Per-repo no-mistakes overrides.
+#
+# This project's ship pipeline runs Matt Pocock's grill-me > to-spec >
+# to-tickets > implement skill workflow upstream of this gate (implement
+# also runs mattpocock's own code-review skill before handoff). no-mistakes
+# is the independent final check that brings the PR in for human review —
+# deliberately kept separate rather than reusing those same skills, so a
+# blind spot in the upstream implement/code-review pass isn't rubber-stamped
+# by an identical reviewer here. See data/projects.md in firstmate and
+# AGENTS.md's "Quality gate" section in this repo for the underlying checks.
+
+# Pin lint/test to this repo's actual commands (they live under service/,
+# not the repo root) instead of no-mistakes' generic default handling.
+# Test runs typecheck + coverage together since those are main's two
+# required GitHub Actions status checks (see AGENTS.md); mutation and eval
+# are intentionally left out here — they're slow, already CI-reported but
+# non-required, and part of the tracked CRAP-ranked remediation backlog
+# (issue #5), not something every ship task's local gate should re-litigate.
+commands:
+  lint: 'cd service && npm run lint'
+  test: 'cd service && npm run typecheck && npm run test:coverage'
+
+# Publish each run's test evidence to the orphan no-mistakes/evidence branch
+# linked from the PR, matching firstmate's own convention.
+test:
+  evidence:
+    store_in_repo: true
