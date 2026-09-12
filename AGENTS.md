@@ -73,6 +73,13 @@ incompatibility — any Jest spec that exercises its real model inference crashe
 Jest's sandboxed VM realm (confirmed by measurement, not assumed; see the file's
 own docblock). Its existing manual check, `npm run tune:duplicate-floor`, is the
 only verification path for that module and isn't run automatically by `preflight`.
+`src/decisions/decision-store.ts`, `decision-record.mapper.ts`, and
+`prisma.service.ts` (issue #59) are excluded from `mutate` the same way, for the
+same reason: their only test, `decision-store.spec.ts`, provisions a real
+testcontainers Postgres per suite run, and Stryker's per-mutant re-run model pays
+that container-startup/migration cost on every single mutant — measured directly
+(`npx stryker run --mutate src/decisions/decision-store.ts`), every mutant timed
+out rather than being killed or surviving.
 `stryker run` also uses `service/jest.stryker.config.js` (transpile-only ts-jest,
 via `isolatedModules`) rather than the normal Jest config — Stryker re-runs the
 suite once per mutant, and full type-checking on every run makes mutation testing

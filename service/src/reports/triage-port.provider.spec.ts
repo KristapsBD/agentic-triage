@@ -124,8 +124,8 @@ describe('triagePortProvider (real DI composition)', () => {
     expect(result).toBe(candidates);
   });
 
-  it('wraps DecisionStore.save (sync) in a resolved promise via saveDecisionRecord', async () => {
-    const save = jest.fn();
+  it('forwards saveDecisionRecord args to DecisionStore.save and awaits it', async () => {
+    const save = jest.fn().mockResolvedValue(undefined);
     const port = buildPort({ decisions: { save } });
     const record = { report_hash: 'h' } as unknown as Parameters<TriagePort['saveDecisionRecord']>[0];
 
@@ -133,9 +133,9 @@ describe('triagePortProvider (real DI composition)', () => {
     expect(save).toHaveBeenCalledWith(record);
   });
 
-  it('wraps DecisionStore.get (sync) in a resolved promise via getDecisionRecord', async () => {
+  it('forwards getDecisionRecord args to DecisionStore.get and returns its result', async () => {
     const stored = { report_hash: 'h' };
-    const get = jest.fn().mockReturnValue(stored);
+    const get = jest.fn().mockResolvedValue(stored);
     const port = buildPort({ decisions: { get } });
 
     const result = await port.getDecisionRecord('h');
@@ -144,9 +144,9 @@ describe('triagePortProvider (real DI composition)', () => {
     expect(result).toBe(stored);
   });
 
-  it('wraps DecisionStore.tryClaim (sync) in a resolved promise via claimDecisionRecord', async () => {
+  it('forwards claimDecisionRecord args to DecisionStore.tryClaim and returns its result', async () => {
     const claimed = { report_hash: 'h' } as unknown as Parameters<TriagePort['claimDecisionRecord']>[0];
-    const tryClaim = jest.fn().mockReturnValue(true);
+    const tryClaim = jest.fn().mockResolvedValue(true);
     const port = buildPort({ decisions: { tryClaim } });
 
     const result = await port.claimDecisionRecord(claimed);

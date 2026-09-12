@@ -28,7 +28,6 @@ describe('loadSettings', () => {
       gitea_token: '',
       anthropic_api_key: '',
       anthropic_model: 'claude-sonnet-5',
-      decision_db_path: '/data/decisions.sqlite3',
       database_url: 'postgresql://triage:triage@localhost:5432/triage?schema=public',
       embedding_model_name: 'Xenova/all-MiniLM-L6-v2',
       duplicate_similarity_floor: 0.35,
@@ -60,14 +59,12 @@ describe('loadSettings', () => {
       GITEA_TOKEN: 'gitea-secret',
       ANTHROPIC_API_KEY: 'anthropic-secret',
       ANTHROPIC_MODEL: 'claude-opus-5',
-      DECISION_DB_PATH: '/tmp/decisions.sqlite3',
       EMBEDDING_MODEL_NAME: 'custom/embedding-model',
     });
 
     expect(settings.gitea_token).toBe('gitea-secret');
     expect(settings.anthropic_api_key).toBe('anthropic-secret');
     expect(settings.anthropic_model).toBe('claude-opus-5');
-    expect(settings.decision_db_path).toBe('/tmp/decisions.sqlite3');
     expect(settings.embedding_model_name).toBe('custom/embedding-model');
   });
 

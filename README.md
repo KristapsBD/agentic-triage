@@ -99,13 +99,13 @@ name matches the hardcoded, known-safe `acme-app` — it cannot be pointed
 at `bug-triage` (this codebase's own Gitea project) by any argument or
 env override. `make fresh-start` runs all three steps below in sequence.
 
-The Decision Record SQLite store also needs clearing if you do this,
+The Decision Record Postgres store also needs clearing if you do this,
 since its entries would otherwise reference issue numbers from the
 deleted repo:
 
 ```
-docker compose down triage-service
-docker volume rm agentic-sdw_triage-decisions
+docker compose down triage-service postgres
+docker volume rm agentic-sdw_postgres-data
 docker compose up -d --build triage-service
 ```
 
@@ -256,8 +256,8 @@ business logic — every provider below is a plain, directly-testable class.
   (ONNX runtime) cosine similarity for Duplicate Candidate retrieval (no
   external embeddings API; ADR-0002 carries over unchanged, thresholds
   re-tuned for this runtime).
-- `src/decisions/decision-store.ts` — SQLite (`better-sqlite3`) Decision
-  Record, phased (pending → processing → completed/gitea_call_failed) for
+- `src/decisions/decision-store.ts` — Postgres (Prisma) Decision Record,
+  phased (pending → processing → completed/gitea_call_failed) for
   idempotent retries.
 - `src/reports/triage-port.provider.ts` — composes the four above into the
   real `TriagePort`, the TS equivalent of the old `real_port.py`

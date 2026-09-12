@@ -12,7 +12,6 @@ describe('ReportsModule wiring', () => {
   beforeAll(() => {
     process.env.GITEA_REPO_OWNER = 'triageadmin';
     process.env.GITEA_REPO_NAME = 'acme-app';
-    process.env.DECISION_DB_PATH = ':memory:';
   });
 
   afterAll(() => {
@@ -44,29 +43,13 @@ describe('ReportsModule wiring', () => {
     expect(typeof port.findCandidates).toBe('function');
     expect(typeof port.judgeDuplicate).toBe('function');
 
-    // Decision Record methods delegate to a real DecisionStore (#33) -- a
-    // round trip through the wired port proves it, rather than a stub throw.
-    const record = {
-      report_hash: 'h',
-      raw_report: 'r',
-      status: 'pending' as const,
-      triage_decision: null,
-      duplicate_verdict: null,
-      pending_action: null,
-      outcome: null,
-      gitea_issue_number: null,
-      error: null,
-      created_at: 0,
-      updated_at: 0,
-      validation_retries_consumed: 0,
-      validation_budget_exhausted: false,
-      confidence: null,
-      transient_retries_consumed: 0,
-      duplicate_candidates_considered: [],
-      token_usage: [],
-      stage_timings_ms: [],
-    };
-    await port.saveDecisionRecord(record);
-    await expect(port.getDecisionRecord('h')).resolves.toEqual(record);
+    // Decision Record methods delegate to a real DecisionStore (#33, #59) --
+    // calling them here would hit a live Postgres database, so (like
+    // findCandidates/judgeDuplicate above) this just confirms they're wired,
+    // not stubbed placeholders. The real round trip is covered by
+    // decision-store.spec.ts against a testcontainers-provisioned Postgres.
+    expect(typeof port.saveDecisionRecord).toBe('function');
+    expect(typeof port.getDecisionRecord).toBe('function');
+    expect(typeof port.claimDecisionRecord).toBe('function');
   });
 });

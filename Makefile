@@ -73,16 +73,16 @@ eval-set-d: ## Run the standalone Set D anchor suite (Set A baseline only, not p
 	docker compose run --rm -e TRIAGE_SERVICE_URL=http://triage-service:8000 triage-service npm run eval:set-d
 
 reset-demo: ## Reset just the demo target's Decision Record store (delete acme-app in Gitea's UI first, see README.md)
-	docker compose down triage-service
-	docker volume rm agentic-sdw_triage-decisions
+	docker compose down triage-service postgres
+	docker volume rm agentic-sdw_postgres-data
 	docker compose up -d --build triage-service
 
 fresh-start: ## Full demo reset to a clean slate (see README.md "Fresh start")
 	./delete-demo-repo.sh
 	./bootstrap.sh
 	docker compose run --rm triage-service npm run seed:set-a
-	docker compose down triage-service
-	docker volume rm agentic-sdw_triage-decisions
+	docker compose down triage-service postgres
+	docker volume rm agentic-sdw_postgres-data
 	docker compose up -d --build triage-service
 	docker compose down prometheus grafana loki
 	docker volume rm agentic-sdw_prometheus-data agentic-sdw_grafana-data agentic-sdw_loki-data

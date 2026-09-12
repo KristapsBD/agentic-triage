@@ -1,63 +1,64 @@
 /**
- * SQLite-backed Decision Record persistence. Mirrors app/decision_store.py.
+ * Postgres-backed (Prisma) Decision Record persistence (issue #59, replacing
+ * the SQLite-backed implementation from before #58/#59). Mirrors
+ * app/decision_store.py.
  *
  * Written in phases (pending -> processing -> completed/gitea_call_failed) so
  * a repeated POST of the same Raw Report can check for a prior record by
  * report hash before doing any LLM or Gitea work.
  */
 
-import { Inject, Injectable } from '@nestjs/common';
-import Database from 'better-sqlite3';
-import { SETTINGS, Settings } from '../config/settings';
+import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { DecisionRecord } from '../reports/types';
+import { fromDecisionRow, toDecisionCreateInput, toDecisionReplaceUpdateInput } from './decision-record.mapper';
+import { PrismaService } from './prisma.service';
 
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS decision_records (
-  report_hash TEXT PRIMARY KEY,
-  payload TEXT NOT NULL
-);
-`;
+const INCLUDE_CHILDREN = {
+  duplicateCandidates: true,
+  tokenUsages: true,
+  stageTimings: true,
+} as const;
+
+function isUniqueConstraintViolation(error: unknown): boolean {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+}
 
 @Injectable()
 export class DecisionStore {
-  private readonly db: Database.Database;
-
-  constructor(@Inject(SETTINGS) settings: Settings) {
-    this.db = new Database(settings.decision_db_path);
-    this.db.exec(SCHEMA);
-  }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Atomic insert-or-bail (F3 audit finding: processReport's prior
    * get-then-save had an await point between the read and the write, so two
    * concurrent identical POSTs could both observe no existing record and
-   * both proceed to do the LLM/Gitea work). better-sqlite3 statements run
-   * synchronously, and this whole method contains no `await`, so within
-   * this single Node process no other request's code can interleave between
-   * the check and the insert -- returns whether this call actually created
-   * the row.
+   * both proceed to do the LLM/Gitea work). The `report_hash` unique
+   * constraint makes this atomic at the database level regardless of
+   * concurrency -- returns whether this call actually created the row.
    */
-  tryClaim(record: DecisionRecord): boolean {
-    const result = this.db
-      .prepare('INSERT OR IGNORE INTO decision_records (report_hash, payload) VALUES (?, ?)')
-      .run(record.report_hash, JSON.stringify(record));
-    return result.changes > 0;
+  async tryClaim(record: DecisionRecord): Promise<boolean> {
+    try {
+      await this.prisma.decision.create({ data: toDecisionCreateInput(record) });
+      return true;
+    } catch (error) {
+      if (isUniqueConstraintViolation(error)) return false;
+      throw error;
+    }
   }
 
-  save(record: DecisionRecord): void {
-    this.db
-      .prepare(
-        'INSERT INTO decision_records (report_hash, payload) VALUES (?, ?) ' +
-          'ON CONFLICT(report_hash) DO UPDATE SET payload = excluded.payload',
-      )
-      .run(record.report_hash, JSON.stringify(record));
+  async save(record: DecisionRecord): Promise<void> {
+    await this.prisma.decision.upsert({
+      where: { reportHash: record.report_hash },
+      create: toDecisionCreateInput(record),
+      update: toDecisionReplaceUpdateInput(record),
+    });
   }
 
-  get(reportHash: string): DecisionRecord | null {
-    const row = this.db
-      .prepare('SELECT payload FROM decision_records WHERE report_hash = ?')
-      .get(reportHash) as { payload: string } | undefined;
-    if (row === undefined) return null;
-    return JSON.parse(row.payload) as DecisionRecord;
+  async get(reportHash: string): Promise<DecisionRecord | null> {
+    const row = await this.prisma.decision.findUnique({
+      where: { reportHash },
+      include: INCLUDE_CHILDREN,
+    });
+    return row ? fromDecisionRow(row) : null;
   }
 }

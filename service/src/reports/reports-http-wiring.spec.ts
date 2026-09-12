@@ -23,7 +23,6 @@ describe('POST /reports HTTP contract (wired through the real AppModule)', () =>
   beforeAll(() => {
     process.env.GITEA_REPO_OWNER = 'triageadmin';
     process.env.GITEA_REPO_NAME = 'acme-app';
-    process.env.DECISION_DB_PATH = ':memory:';
     // Real settings default this to 1s; zero it so the exhausted-retry test
     // doesn't sleep through the transient budget for real.
     process.env.TRANSIENT_RETRY_BACKOFF_SECONDS = '0';
