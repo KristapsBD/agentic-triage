@@ -20,9 +20,11 @@ export type FixLoopDecision = 'run_autofix' | 'self_fix' | 'escalate' | 'done' |
 
 /**
  * Spec (issue #56) caps this loop at 3 attempts: 1 `autofix` try + 2 self-fix
- * tries. Temporarily reduced to 1 by captain's override: the plan's ~1
- * included review per hour means a 3-attempt loop can't get 3 fresh reviews
- * inside the rate limit. Raising this back to 3 is a one-line change.
+ * tries. Fixed at 1 here by captain's override: this repo's plan allows only
+ * ~1 included review per hour, and no higher-tier plan will be purchased for
+ * it, so a 3-attempt loop permanently cannot get 3 fresh reviews inside that
+ * window. Left as a named constant so it can still be changed in one line if
+ * the plan ever does.
  */
 export const MAX_FIX_ATTEMPTS = 1;
 

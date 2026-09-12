@@ -100,10 +100,12 @@ convention as `duplicate-verdict.ts`/`confidence.ts`/`retry.ts`):
   never merge over an unresolved verdict.
 
 The attempt cap is `MAX_FIX_ATTEMPTS` in that file. Spec caps it at 3 (1
-`autofix` + 2 `self_fix` tries, the latter used only once the cap is raised
-back); it's temporarily reduced to 1 because CodeRabbit's plan allows only
-~1 included review per hour, so a 3-attempt loop can't get 3 fresh reviews
-inside that window (issue #56). Raising it back to 3 is a one-line change.
+`autofix` + 2 `self_fix` tries), but it's fixed at 1 here: this repo's plan
+allows only ~1 included review per hour, and the captain has confirmed no
+higher-tier plan will be purchased for this repo, so a 3-attempt loop
+permanently cannot get 3 fresh reviews inside that window (issue #56). The
+cap stays a named constant so it can still be changed in one line if the
+plan ever does.
 
 `.coderabbit.yaml` at the repo root versions the review profile, pre-merge
 checks, and path filters actually configured on CodeRabbit — see that file's
