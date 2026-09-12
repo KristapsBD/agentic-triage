@@ -27,6 +27,27 @@ services:
       timeout: 5s
       retries: 20
 
+  # Issue #58: Postgres/Prisma persistence for decision records. Port
+  # published to the host so an external client (e.g. TablePlus, psql) can
+  # connect directly; no bundled admin-UI service is added (see issue #57).
+  postgres:
+    image: postgres:17
+    container_name: bug-triage-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=triage
+      - POSTGRES_PASSWORD=triage
+      - POSTGRES_DB=triage
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U triage -d triage"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   triage-service:
     build:
       context: ./service
@@ -37,6 +58,8 @@ services:
       # Override the host-facing GITEA_URL from .env with the in-network address.
       - GITEA_URL=http://gitea:3000
       - DECISION_DB_PATH=/data/decisions.sqlite3
+      # Override the host-facing DATABASE_URL from .env with the in-network address.
+      - DATABASE_URL=postgresql://triage:triage@postgres:5432/triage?schema=public
     volumes:
       - ./service:/app
       - /app/node_modules
@@ -45,6 +68,8 @@ services:
       - "8000:8000"
     depends_on:
       gitea:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:8000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
@@ -141,6 +166,7 @@ services:
 volumes:
   gitea-data:
   triage-decisions:
+  postgres-data:
   prometheus-data:
   loki-data:
   grafana-data:

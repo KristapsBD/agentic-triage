@@ -16,6 +16,7 @@ const settings: Settings = {
   validation_retry_budget: 2,
   transient_retry_budget: 3,
   transient_retry_backoff_seconds: 1,
+  database_url: 'postgresql://triage:triage@localhost:5432/triage?schema=public',
 };
 
 function mockReply(): FastifyReply {

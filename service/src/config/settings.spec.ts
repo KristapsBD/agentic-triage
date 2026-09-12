@@ -35,6 +35,7 @@ describe('loadSettings', () => {
       validation_retry_budget: 2,
       transient_retry_budget: 3,
       transient_retry_backoff_seconds: 1.0,
+      database_url: 'postgresql://triage:triage@localhost:5432/triage?schema=public',
     });
   });
 
@@ -61,6 +62,7 @@ describe('loadSettings', () => {
       ANTHROPIC_MODEL: 'claude-opus-5',
       DECISION_DB_PATH: '/tmp/decisions.sqlite3',
       EMBEDDING_MODEL_NAME: 'custom/embedding-model',
+      DATABASE_URL: 'postgresql://user:pass@db:5432/custom?schema=public',
     });
 
     expect(settings.gitea_token).toBe('gitea-secret');
@@ -68,6 +70,7 @@ describe('loadSettings', () => {
     expect(settings.anthropic_model).toBe('claude-opus-5');
     expect(settings.decision_db_path).toBe('/tmp/decisions.sqlite3');
     expect(settings.embedding_model_name).toBe('custom/embedding-model');
+    expect(settings.database_url).toBe('postgresql://user:pass@db:5432/custom?schema=public');
   });
 
   it('honors an override for every numeric setting', () => {

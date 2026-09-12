@@ -1,0 +1,178 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+//
+// Mirrors service/src/reports/types.ts's DecisionRecord (see ADR-0012 and
+// issue #57/#58): the single JSON `payload` blob becomes this normalized
+// `Decision` header row plus three independently queryable child tables.
+// Nothing in the application reads/writes through this schema yet.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DecisionStatus {
+  pending
+  processing
+  completed
+  gitea_call_failed
+}
+
+enum ReportType {
+  bug
+  feature_request
+  unclear
+  spam_or_off_topic
+}
+
+enum Severity {
+  critical
+  high
+  medium
+  low
+}
+
+enum Component {
+  frontend
+  backend
+  api
+  auth
+  database
+  infra
+  docs
+  unknown
+}
+
+enum DuplicateTier {
+  clear_duplicate
+  possible_duplicate
+  not_a_duplicate
+}
+
+enum ActionType {
+  create_issue
+  comment
+  none
+}
+
+enum Outcome {
+  issue_created
+  duplicate_commented
+  review_flagged
+  feature_request_filed
+  dropped_spam
+}
+
+enum Confidence {
+  high
+  medium
+  low
+}
+
+enum SameBugJudgment {
+  yes
+  possibly
+  no
+}
+
+enum LlmCallType {
+  extract
+  duplicate_judgment
+}
+
+enum PipelineStage {
+  extraction
+  embedding_retrieval
+  duplicate_judgment
+  gitea_list_open_issues
+  gitea_create_issue
+  gitea_comment_issue
+  end_to_end
+}
+
+// Header row. Synthetic `id` PK per idiomatic Prisma convention; `reportHash`
+// stays uniquely indexed for the existing lookup-by-hash use case.
+model Decision {
+  id       String         @id @default(cuid())
+  reportHash    String         @unique
+  rawReport     String
+  status        DecisionStatus
+
+  outcome            Outcome?
+  giteaIssueNumber   Int?
+  error              String?
+
+  createdAt Float
+  updatedAt Float
+
+  validationRetriesConsumed Int
+  validationBudgetExhausted Boolean
+  confidence                Confidence?
+  transientRetriesConsumed  Int
+
+  // Flattened `triage_decision`
+  title               String?
+  reportType          ReportType?
+  severity            Severity?
+  components          Component[]
+  reproSteps          String[]
+  supportingEvidence  String?
+  distinctIssues      String[]
+
+  // Flattened `duplicate_verdict`
+  duplicateTier       DuplicateTier?
+  duplicateTargetIssue Int?
+  duplicateSimilarity  Float?
+  duplicateRationale   String?
+
+  // Flattened `pending_action`
+  actionType         ActionType?
+  actionTitle        String?
+  actionBody         String?
+  actionLabels       String[]
+  actionTargetIssue  Int?
+
+  duplicateCandidates DuplicateCandidate[]
+  tokenUsages         TokenUsage[]
+  stageTimings        StageTiming[]
+
+  @@map("decisions")
+}
+
+model DuplicateCandidate {
+  id                 String           @id @default(cuid())
+  decision           Decision         @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  decisionId         String
+  issueNumber        Int
+  similarity         Float
+  sameBug            SameBugJudgment?
+
+  @@map("duplicate_candidates")
+}
+
+model TokenUsage {
+  id                     String      @id @default(cuid())
+  decision               Decision    @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  decisionId             String
+  callType               LlmCallType
+  candidateIssueNumber   Int?
+  inputTokens            Int
+  outputTokens           Int
+
+  @@map("token_usages")
+}
+
+model StageTiming {
+  id                     String        @id @default(cuid())
+  decision               Decision      @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  decisionId             String
+  stage                  PipelineStage
+  durationMs             Int
+  candidateIssueNumber   Int?
+
+  @@map("stage_timings")
+}

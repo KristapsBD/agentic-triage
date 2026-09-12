@@ -14,6 +14,10 @@ export interface Settings {
   validation_retry_budget: number;
   transient_retry_budget: number;
   transient_retry_backoff_seconds: number;
+  // Issue #58: wired in following Prisma convention; not yet consumed by
+  // any application code (Prisma Client reads it directly from the
+  // environment). See service/prisma/schema.prisma.
+  database_url: string;
 }
 
 function required(env: NodeJS.ProcessEnv, key: string): string {
@@ -65,12 +69,23 @@ function loadRetrySettings(env: NodeJS.ProcessEnv) {
   };
 }
 
+function loadDatabaseSettings(env: NodeJS.ProcessEnv) {
+  return {
+    database_url: optionalString(
+      env,
+      'DATABASE_URL',
+      'postgresql://triage:triage@localhost:5432/triage?schema=public',
+    ),
+  };
+}
+
 export function loadSettings(env: NodeJS.ProcessEnv = process.env): Settings {
   return {
     ...loadGiteaSettings(env),
     ...loadAnthropicSettings(env),
     ...loadDuplicateDetectionSettings(env),
     ...loadRetrySettings(env),
+    ...loadDatabaseSettings(env),
   };
 }
 

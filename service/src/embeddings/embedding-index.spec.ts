@@ -31,6 +31,7 @@ const settings: Settings = {
   validation_retry_budget: 2,
   transient_retry_budget: 3,
   transient_retry_backoff_seconds: 0,
+  database_url: 'postgresql://triage:triage@localhost:5432/triage?schema=public',
 };
 
 /** Maps fixed text->vector so the real dot-product logic sees deterministic similarities. */
