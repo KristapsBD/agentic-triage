@@ -343,11 +343,12 @@ make migrate-down      # roll back the most recent migration
 single-step "down" command short of `migrate reset` (which wipes all data),
 so this applies that migration's own `down.sql` and then removes its row
 from Prisma's `_prisma_migrations` tracking table so `migrate status`/
-`migrate` see it as pending again. All three targets run on the host against
-`postgres`'s published port (`DATABASE_URL` in the repo-root `.env`), the
-same convention `test`/`typecheck`/`lint` already use — the `postgres`
-container must already be up (`docker compose up -d postgres`, or any `make
-up`).
+`migrate` see it as pending again. `migrate`/`migrate-status` run on the
+host against `postgres`'s published port (`DATABASE_URL` in the repo-root
+`.env`), the same convention `test`/`typecheck`/`lint` already use;
+`migrate-down` instead runs `psql` inside the `postgres` container via
+`docker compose exec`. Either way the `postgres` container must already be
+up (`docker compose up -d postgres`, or any `make up`).
 
 ## What I'd flag as rough edges / TODOs
 
