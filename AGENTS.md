@@ -71,6 +71,46 @@ Since going public, only issues authored by the repo owner (`KristapsBD`) are
 ever picked up as actionable work; `.github/workflows/external-issue-guard.yml`
 auto-closes everything else (see `docs/agents/issue-tracker.md`).
 
+### CodeRabbit review loop
+
+This repo is public with under 10 stars, so CodeRabbit never auto-reviews a PR
+here (`docs.coderabbit.ai/configuration/auto-review`) — the ship-flow crewmate
+that owns a PR from push through CI through merge comments `@coderabbitai
+review` itself: once immediately after opening the PR, and again after every
+subsequent push to that branch, including pushes made by the fix loop below.
+This is instructions on the existing crewmate, not a new bot or workflow.
+
+When CodeRabbit requests changes, the same crewmate runs a bounded fix loop
+driven by a pure decision function of `(attempt_number, latest_review_verdict)
+-> {run_autofix, self_fix, escalate, done, wait}`
+(`service/src/ci/coderabbit-review-loop.ts`, colocated Jest spec, same
+convention as `duplicate-verdict.ts`/`confidence.ts`/`retry.ts`):
+
+- Verdict `approved` (no actionable comments) at any point -> `done`, proceed
+  to merge as normal.
+- Verdict `pending` (review hasn't run yet, or CodeRabbit's hourly review cap
+  was hit) -> `wait`: recheck later, don't consume an attempt, don't escalate,
+  don't report done. Never read a not-yet-run review as `changes_requested`.
+- Attempt 1, verdict `changes_requested` -> `run_autofix`: comment
+  `@coderabbitai autofix`, wait for its fix commit, re-trigger review, and
+  re-check.
+- Verdict still `changes_requested` on the re-review after the last allowed
+  attempt -> `escalate`: append `blocked: CodeRabbit review still requests
+  changes after <N> fix attempt(s) (PR #<n>)` to the status file and stop —
+  never merge over an unresolved verdict.
+
+The attempt cap is `MAX_FIX_ATTEMPTS` in that file. Spec caps it at 3 (1
+`autofix` + 2 `self_fix` tries, the latter used only once the cap is raised
+back); it's temporarily reduced to 1 because CodeRabbit's plan allows only
+~1 included review per hour, so a 3-attempt loop can't get 3 fresh reviews
+inside that window (issue #56). Raising it back to 3 is a one-line change.
+
+`.coderabbit.yaml` at the repo root versions the review profile, pre-merge
+checks, and path filters actually configured on CodeRabbit — see that file's
+own header for how it was derived. CodeRabbit is not yet among `main`'s
+required status checks (that's a deliberate later phase, added only once this
+trigger/fix-loop instruction set has run clean on real PRs).
+
 ### Observability stack (Prometheus/Grafana/Loki)
 
 `docker-compose.yml` runs prometheus, loki, promtail, and grafana alongside gitea/triage-service. Config lives under `observability/` (prometheus scrape config — including a `gitea` job, since Gitea's own `GITEA__metrics__ENABLED` exposes `/metrics` purely so alerting can key off `up{job="gitea"}` — loki config, promtail pipeline that ships triage-service's structured JSON logs with `report_hash`/`stage` as Loki structured metadata, and Grafana's provisioned datasources + dashboard JSON + six red-light alert rules under `provisioning/alerting/` — no manual Grafana setup). Alerting is dashboard-only (no Alertmanager/notification channel); see ADR-0009 for the six conditions and their conservative thresholds. Grafana is at `http://localhost:3001` (anonymous Viewer access enabled).
