@@ -20,7 +20,7 @@ services:
     volumes:
       - gitea-data:/data
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/healthz"]
       interval: 5s
@@ -37,8 +37,6 @@ services:
       - POSTGRES_DB=triage
     volumes:
       - postgres-data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U triage -d triage"]
       interval: 5s
@@ -59,7 +57,7 @@ services:
       - ./service:/app
       - /app/node_modules
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       gitea:
         condition: service_healthy
@@ -80,7 +78,7 @@ services:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     depends_on:
       triage-service:
         condition: service_healthy
@@ -100,7 +98,7 @@ services:
       - ./observability/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
       - loki-data:/loki
     ports:
-      - "3100:3100"
+      - "127.0.0.1:3100:3100"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3100/ready"]
       interval: 10s
@@ -144,7 +142,7 @@ services:
       - ./observability/grafana/dashboards:/etc/grafana/provisioning/dashboards-json:ro
       - grafana-data:/var/lib/grafana
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     depends_on:
       prometheus:
         condition: service_healthy

@@ -8,3 +8,4 @@ reports/mutation/
 service/reports/
 stryker.log
 context/
+docker-compose.override.yml
