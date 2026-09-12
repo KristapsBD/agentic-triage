@@ -85,3 +85,7 @@ When updating this file, preserve this bar for all agents and keep entries conci
 ## Improvement/suggestion decisions
 
 Prefer the properly-engineered production solution over a quick fix that only patches the current implementation — but don't introduce abstraction, infrastructure, or generality the task doesn't actually need.
+
+## Output
+
+Keep output short and concise in plain simple english
