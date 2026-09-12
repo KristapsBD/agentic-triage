@@ -26,7 +26,12 @@ export interface MetricsRegistry {
 
 export interface TelemetryRecorder {
   readonly registry: MetricsRegistry;
-  recordRetryOutcome(stage: RetryStage, budget: RetryBudgetKind, outcome: RetryOutcomeKind, attempts: number): void;
+  recordRetryOutcome(
+    stage: RetryStage,
+    budget: RetryBudgetKind,
+    outcome: RetryOutcomeKind,
+    attempts: number,
+  ): void;
   recordTokenUsage(usage: LlmCallUsage): void;
   recordStageLatency(timing: StageTiming): void;
   recordOutcome(outcome: Outcome): void;

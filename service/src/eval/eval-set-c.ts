@@ -80,12 +80,17 @@ async function giteaGetIssue(number: number): Promise<{ state?: string; body?: s
 function checkReportType(expected: ReportType): Check {
   return (body) => {
     const actual = body.triage_decision?.report_type;
-    return actual === expected ? [] : [`expected report_type=${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`];
+    return actual === expected
+      ? []
+      : [`expected report_type=${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`];
   };
 }
 
 function checkOutcome(expected: Outcome): Check {
-  return (body) => (body.outcome === expected ? [] : [`expected outcome=${JSON.stringify(expected)}, got ${JSON.stringify(body.outcome)}`]);
+  return (body) =>
+    body.outcome === expected
+      ? []
+      : [`expected outcome=${JSON.stringify(expected)}, got ${JSON.stringify(body.outcome)}`];
 }
 
 function checkComponentsMin(n: number): Check {
@@ -98,21 +103,27 @@ function checkComponentsMin(n: number): Check {
 function checkReproStepsLen(n: number): Check {
   return (body) => {
     const actual = body.triage_decision?.repro_steps ?? [];
-    return actual.length === n ? [] : [`expected ${n} repro_steps, got ${actual.length}: ${JSON.stringify(actual)}`];
+    return actual.length === n
+      ? []
+      : [`expected ${n} repro_steps, got ${actual.length}: ${JSON.stringify(actual)}`];
   };
 }
 
 function checkDuplicateTier(expectedTier: DuplicateTier): Check {
   return (body) => {
     const actual = body.duplicate_verdict?.tier;
-    return actual === expectedTier ? [] : [`expected duplicate tier=${JSON.stringify(expectedTier)}, got ${JSON.stringify(actual)}`];
+    return actual === expectedTier
+      ? []
+      : [`expected duplicate tier=${JSON.stringify(expectedTier)}, got ${JSON.stringify(actual)}`];
   };
 }
 
 function checkDuplicateTierNot(excludedTier: DuplicateTier): Check {
   return (body) => {
     const actual = body.duplicate_verdict?.tier;
-    return actual === excludedTier ? [`duplicate tier=${JSON.stringify(actual)} should not be ${JSON.stringify(excludedTier)}`] : [];
+    return actual === excludedTier
+      ? [`duplicate tier=${JSON.stringify(actual)} should not be ${JSON.stringify(excludedTier)}`]
+      : [];
   };
 }
 
@@ -120,7 +131,9 @@ function checkRationaleNotContains(needle: string): Check {
   return (body) => {
     const rationale = body.duplicate_verdict?.rationale ?? '';
     return rationale.includes(needle)
-      ? [`duplicate_verdict.rationale still contained ${JSON.stringify(needle)} verbatim -- expected it not to`]
+      ? [
+          `duplicate_verdict.rationale still contained ${JSON.stringify(needle)} verbatim -- expected it not to`,
+        ]
       : [];
   };
 }
@@ -159,12 +172,15 @@ function allPost(...postChecks: PostCheck[]): PostCheck {
 function postCheckIssueStateByTitle(titleSubstring: string, expectedState: string): PostCheck {
   return async () => {
     const number = await findGiteaIssueNumber(SETTINGS, titleSubstring);
-    if (number === null) return [`could not resolve issue for ${JSON.stringify(titleSubstring)} to verify state`];
+    if (number === null)
+      return [`could not resolve issue for ${JSON.stringify(titleSubstring)} to verify state`];
     try {
       const issue = await giteaGetIssue(number);
       return issue.state === expectedState
         ? []
-        : [`issue #${number} (${JSON.stringify(titleSubstring)}) state=${JSON.stringify(issue.state)}, expected ${JSON.stringify(expectedState)}`];
+        : [
+            `issue #${number} (${JSON.stringify(titleSubstring)}) state=${JSON.stringify(issue.state)}, expected ${JSON.stringify(expectedState)}`,
+          ];
     } catch (err) {
       return [`could not fetch issue #${number} to verify: ${(err as Error).message}`];
     }
@@ -175,7 +191,10 @@ function postCheckIssueStateByTitle(titleSubstring: string, expectedState: strin
 // right there in live, un-fenced markdown. Requires an (unescaped) code
 // fence delimiter both before and after the needle's position, matching
 // how pipeline-body.ts's quote() actually neutralizes it (ADR-0007).
-function postCheckBodyFenced(getIssueNumber: (body: ResponseBody) => number | null | undefined, needle: string): PostCheck {
+function postCheckBodyFenced(
+  getIssueNumber: (body: ResponseBody) => number | null | undefined,
+  needle: string,
+): PostCheck {
   return async (body) => {
     const number = getIssueNumber(body);
     if (number === null || number === undefined) {
@@ -185,7 +204,8 @@ function postCheckBodyFenced(getIssueNumber: (body: ResponseBody) => number | nu
       const issue = await giteaGetIssue(number);
       const text = issue.body ?? '';
       const idx = text.indexOf(needle);
-      if (idx === -1) return [`issue #${number} body did not contain ${JSON.stringify(needle)} verbatim`];
+      if (idx === -1)
+        return [`issue #${number} body did not contain ${JSON.stringify(needle)} verbatim`];
       const fenceBefore = text.lastIndexOf('```', idx);
       const fenceAfter = text.indexOf('```', idx);
       if (fenceBefore === -1 || fenceAfter === -1) {
@@ -201,7 +221,10 @@ function postCheckBodyFenced(getIssueNumber: (body: ResponseBody) => number | nu
   };
 }
 
-function postCheckBodyNotContains(getIssueNumber: (body: ResponseBody) => number | null | undefined, needle: string): PostCheck {
+function postCheckBodyNotContains(
+  getIssueNumber: (body: ResponseBody) => number | null | undefined,
+  needle: string,
+): PostCheck {
   return async (body) => {
     const number = getIssueNumber(body);
     if (number === null || number === undefined) {
@@ -209,7 +232,11 @@ function postCheckBodyNotContains(getIssueNumber: (body: ResponseBody) => number
     }
     try {
       const issue = await giteaGetIssue(number);
-      return (issue.body ?? '').includes(needle) ? [`issue #${number} body still contained ${JSON.stringify(needle)} verbatim -- expected it redacted`] : [];
+      return (issue.body ?? '').includes(needle)
+        ? [
+            `issue #${number} body still contained ${JSON.stringify(needle)} verbatim -- expected it redacted`,
+          ]
+        : [];
     } catch (err) {
       return [`could not fetch issue #${number} to verify: ${(err as Error).message}`];
     }
@@ -240,7 +267,7 @@ const CASES: Case[] = [
     id: 'H3_duplicate_of_csv_export_paraphrased',
     rawReport:
       'Trying to download a big report as CSV just spins and spins and after a couple ' +
-      'minutes I get a gateway error. Small reports download instantly, it\'s only the ' +
+      "minutes I get a gateway error. Small reports download instantly, it's only the " +
       'huge ones that fail.',
     check: checkDuplicateTier('clear_duplicate'),
     // sanity: target still just commented-on, not closed
@@ -298,7 +325,7 @@ const CASES: Case[] = [
   {
     id: 'H8b_emergent_bug_paraphrase_should_dedupe',
     rawReport:
-      "Audit log PDF exports are missing anything from today -- the web view shows " +
+      'Audit log PDF exports are missing anything from today -- the web view shows ' +
       "today's entries just fine, but they never make it into the exported PDF no matter " +
       'which date range I pick.',
     check: checkDuplicateTier('clear_duplicate'),
@@ -313,7 +340,7 @@ const CASES: Case[] = [
   {
     id: 'E1_bundled_report_still_cross_links_duplicate',
     rawReport:
-      'A few things going on: first, on iPhone Safari the login button just doesn\'t ' +
+      "A few things going on: first, on iPhone Safari the login button just doesn't " +
       'respond when tapped at all -- same as before; second, the currency dropdown on ' +
       'checkout defaults to USD even for EU accounts; third, the settings page loses ' +
       'your timezone preference every time you log out and back in.',
@@ -356,7 +383,7 @@ const CASES: Case[] = [
   {
     id: 'E5_pii_and_secrets_redacted',
     rawReport:
-      'Getting a 500 when saving my account settings. Here\'s the request I sent for ' +
+      "Getting a 500 when saving my account settings. Here's the request I sent for " +
       'debugging: POST /api/account {"email":"jane.doe@example.com",' +
       '"password":"CorrectHorseBattery9!","api_key":"sk_live_FAKE1234567890abcdef"}. ' +
       'Been stuck on this all morning.',
@@ -409,7 +436,7 @@ const CASES: Case[] = [
     id: 'D1_paraphrase_engineered_near_issue1_different_bug',
     rawReport:
       "On iOS Safari, tapping 'Log in' looks like nothing happens for a few seconds -- the " +
-      "button just sits there -- but the login actually succeeds behind the scenes and the " +
+      'button just sits there -- but the login actually succeeds behind the scenes and the ' +
       'redirect eventually fires anyway once you wait it out. Started right after we shipped ' +
       "the 3.6 release. Desktop Chrome shows the same brief delay but it's barely noticeable " +
       'there.',
@@ -474,7 +501,12 @@ function sleep(ms: number): Promise<void> {
 // Filing is best-effort dev tooling around the eval run, not the thing
 // under test -- a `tea` hiccup should never mask the FAIL that was already
 // printed above it.
-async function fileFailureSafely(caseId: string, failures: string[], rawReport: string, response: unknown): Promise<void> {
+async function fileFailureSafely(
+  caseId: string,
+  failures: string[],
+  rawReport: string,
+  response: unknown,
+): Promise<void> {
   try {
     await fileSetCFailure(caseId, failures, rawReport, response);
   } catch (err) {
@@ -501,7 +533,12 @@ async function run(): Promise<number> {
       if (resp.status !== 200) {
         console.log(`${testCase.id.padEnd(45)} FAIL`);
         console.log(`    - HTTP ${resp.status}: ${JSON.stringify(body)}`);
-        await fileFailureSafely(testCase.id, [`HTTP ${resp.status}: ${JSON.stringify(body)}`], testCase.rawReport, body);
+        await fileFailureSafely(
+          testCase.id,
+          [`HTTP ${resp.status}: ${JSON.stringify(body)}`],
+          testCase.rawReport,
+          body,
+        );
         continue;
       }
     } catch (err) {
@@ -544,8 +581,16 @@ async function run(): Promise<number> {
   }
 
   console.log('-'.repeat(80));
-  console.log(`${passed}/${totalAssertable} assertable cases passed, ${observed} observational cases printed above for review`);
+  console.log(
+    `${passed}/${totalAssertable} assertable cases passed, ${observed} observational cases printed above for review`,
+  );
   return passed === totalAssertable ? 0 : 1;
 }
 
-run().then((code) => process.exit(code));
+run().then(
+  (code) => process.exit(code),
+  (err: unknown) => {
+    console.error(err);
+    process.exit(1);
+  },
+);

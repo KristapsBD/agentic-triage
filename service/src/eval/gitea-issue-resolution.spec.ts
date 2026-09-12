@@ -4,7 +4,9 @@ import { GiteaIssueSummary, resolveGiteaIssueByTitle } from './gitea-issue-resol
 
 describe('resolveGiteaIssueByTitle', () => {
   it('resolves an unambiguous substring match', () => {
-    const issues: GiteaIssueSummary[] = [{ number: 1, title: 'Login button unresponsive on mobile Safari' }];
+    const issues: GiteaIssueSummary[] = [
+      { number: 1, title: 'Login button unresponsive on mobile Safari' },
+    ];
     expect(resolveGiteaIssueByTitle(issues, 'Login button unresponsive')).toBe(1);
   });
 
@@ -31,7 +33,9 @@ describe('resolveGiteaIssueByTitle', () => {
       { number: 21, title: 'Login button unresponsive on Settings page' },
       { number: 1, title: 'Login button unresponsive on mobile Safari' },
     ];
-    expect(() => resolveGiteaIssueByTitle(issues, 'Login button unresponsive')).toThrow(/ambiguous/i);
+    expect(() => resolveGiteaIssueByTitle(issues, 'Login button unresponsive')).toThrow(
+      /ambiguous/i,
+    );
   });
 
   it('throws when multiple issues share the exact same title', () => {
@@ -39,6 +43,8 @@ describe('resolveGiteaIssueByTitle', () => {
       { number: 21, title: 'Login button unresponsive on Settings page' },
       { number: 22, title: 'Login button unresponsive on Settings page' },
     ];
-    expect(() => resolveGiteaIssueByTitle(issues, 'Login button unresponsive on Settings page')).toThrow(/ambiguous/i);
+    expect(() =>
+      resolveGiteaIssueByTitle(issues, 'Login button unresponsive on Settings page'),
+    ).toThrow(/ambiguous/i);
   });
 });

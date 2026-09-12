@@ -54,9 +54,9 @@ export class DecisionStore {
   }
 
   get(reportHash: string): DecisionRecord | null {
-    const row = this.db.prepare('SELECT payload FROM decision_records WHERE report_hash = ?').get(reportHash) as
-      | { payload: string }
-      | undefined;
+    const row = this.db
+      .prepare('SELECT payload FROM decision_records WHERE report_hash = ?')
+      .get(reportHash) as { payload: string } | undefined;
     if (row === undefined) return null;
     return JSON.parse(row.payload) as DecisionRecord;
   }

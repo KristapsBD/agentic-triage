@@ -23,6 +23,10 @@ jobs:
   lint:
     name: lint
     runs-on: ubuntu-latest
+    env:
+      # prisma.config.ts requires DATABASE_URL to load, even though
+      # `prisma format --check` never opens a real connection.
+      DATABASE_URL: postgresql://placeholder:placeholder@localhost:5432/placeholder
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -33,6 +37,10 @@ jobs:
       - run: npm ci
         working-directory: service
       - run: npm run lint
+        working-directory: service
+      - run: npm run format:check
+        working-directory: service
+      - run: npm run format:prisma:check
         working-directory: service
 
   coverage:

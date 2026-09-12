@@ -3,7 +3,11 @@ import { MetricsController } from './metrics.controller';
 import { PrometheusTelemetryRecorder } from './prometheus-telemetry-recorder';
 
 function mockReply(): FastifyReply {
-  const reply = { status: jest.fn(), send: jest.fn(), header: jest.fn() } as unknown as FastifyReply;
+  const reply = {
+    status: jest.fn(),
+    send: jest.fn(),
+    header: jest.fn(),
+  } as unknown as FastifyReply;
   (reply.status as jest.Mock).mockReturnValue(reply);
   (reply.header as jest.Mock).mockReturnValue(reply);
   return reply;

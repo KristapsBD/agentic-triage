@@ -11,7 +11,10 @@ export interface GiteaIssueSummary {
  * previously carried their own byte-identical copy of this fetch-then-
  * resolve pair (code review, scout-hire-audit-opus pass).
  */
-export async function findGiteaIssueNumber(settings: Settings, titleSubstring: string): Promise<number | null> {
+export async function findGiteaIssueNumber(
+  settings: Settings,
+  titleSubstring: string,
+): Promise<number | null> {
   const base = `${settings.gitea_url}/api/v1/repos/${settings.gitea_repo_owner}/${settings.gitea_repo_name}`;
   const resp = await fetch(`${base}/issues?state=all&type=issues&limit=50`, {
     headers: { Authorization: `token ${settings.gitea_token}` },
@@ -37,7 +40,10 @@ export async function findGiteaIssueNumber(settings: Settings, titleSubstring: s
  * seed issue at the same title length -- so a genuine collision surfaces as
  * a clear eval-harness error instead of a mysterious wrong-target failure.
  */
-export function resolveGiteaIssueByTitle(issues: GiteaIssueSummary[], titleSubstring: string): number | null {
+export function resolveGiteaIssueByTitle(
+  issues: GiteaIssueSummary[],
+  titleSubstring: string,
+): number | null {
   const needle = titleSubstring.toLowerCase();
 
   const exactMatches = issues.filter((issue) => issue.title.toLowerCase() === needle);

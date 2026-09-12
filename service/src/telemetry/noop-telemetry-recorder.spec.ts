@@ -17,21 +17,29 @@ describe('NoopTelemetryRecorder', () => {
     const recorder = newRecorder();
 
     expect(recorder.recordRetryOutcome('extraction', 'validation', 'succeeded', 1)).toBeUndefined();
-    expect(recorder.recordRetryOutcome('duplicate_judgment', 'transient', 'exhausted', 3)).toBeUndefined();
+    expect(
+      recorder.recordRetryOutcome('duplicate_judgment', 'transient', 'exhausted', 3),
+    ).toBeUndefined();
   });
 
   it('recordTokenUsage is a no-op', () => {
     const recorder = newRecorder();
 
     expect(
-      recorder.recordTokenUsage({ promptTokens: 10, completionTokens: 5, totalTokens: 15 } as never),
+      recorder.recordTokenUsage({
+        promptTokens: 10,
+        completionTokens: 5,
+        totalTokens: 15,
+      } as never),
     ).toBeUndefined();
   });
 
   it('recordStageLatency is a no-op', () => {
     const recorder = newRecorder();
 
-    expect(recorder.recordStageLatency({ stage: 'extraction', durationMs: 42 } as never)).toBeUndefined();
+    expect(
+      recorder.recordStageLatency({ stage: 'extraction', durationMs: 42 } as never),
+    ).toBeUndefined();
   });
 
   it('recordOutcome is a no-op', () => {

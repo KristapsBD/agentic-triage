@@ -24,7 +24,12 @@ dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 import { EmbeddingIndex } from '../embeddings/embedding-index';
 import { loadSettings } from '../config/settings';
-import { CLEAR_DUPLICATE_REPORT, NEAR_MISS_REPORTS, SET_A, UNRELATED_REPORT } from '../eval/fixtures';
+import {
+  CLEAR_DUPLICATE_REPORT,
+  NEAR_MISS_REPORTS,
+  SET_A,
+  UNRELATED_REPORT,
+} from '../eval/fixtures';
 
 const REPORTS: Record<string, string> = {
   [CLEAR_DUPLICATE_REPORT.name]: CLEAR_DUPLICATE_REPORT.text,
@@ -44,7 +49,9 @@ async function main(): Promise<void> {
       console.log('  (nothing cleared the floor)');
     }
     for (const c of candidates) {
-      console.log(`  #${c.issue_number} ${c.title.slice(0, 45).padEnd(45)} sim=${c.similarity.toFixed(4)}`);
+      console.log(
+        `  #${c.issue_number} ${c.title.slice(0, 45).padEnd(45)} sim=${c.similarity.toFixed(4)}`,
+      );
     }
     console.log();
   }

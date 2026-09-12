@@ -6,7 +6,13 @@
  */
 
 import { DuplicateTier, LlmCallUsage, Outcome, StageTiming } from '../../reports/types';
-import { MetricsRegistry, RetryBudgetKind, RetryOutcomeKind, RetryStage, TelemetryRecorder } from '../telemetry-recorder.interface';
+import {
+  MetricsRegistry,
+  RetryBudgetKind,
+  RetryOutcomeKind,
+  RetryStage,
+  TelemetryRecorder,
+} from '../telemetry-recorder.interface';
 
 export interface RetryOutcomeCall {
   stage: RetryStage;
@@ -27,7 +33,10 @@ export interface LogStageCall {
 }
 
 export class FakeTelemetryRecorder implements TelemetryRecorder {
-  readonly registry: MetricsRegistry = { contentType: 'text/plain', metrics: () => Promise.resolve('') };
+  readonly registry: MetricsRegistry = {
+    contentType: 'text/plain',
+    metrics: () => Promise.resolve(''),
+  };
 
   retryOutcomes: RetryOutcomeCall[] = [];
   tokenUsages: LlmCallUsage[] = [];
@@ -37,7 +46,12 @@ export class FakeTelemetryRecorder implements TelemetryRecorder {
   duplicateJudgmentSkips: DuplicateJudgmentSkippedCall[] = [];
   logs: LogStageCall[] = [];
 
-  recordRetryOutcome(stage: RetryStage, budget: RetryBudgetKind, outcome: RetryOutcomeKind, attempts: number): void {
+  recordRetryOutcome(
+    stage: RetryStage,
+    budget: RetryBudgetKind,
+    outcome: RetryOutcomeKind,
+    attempts: number,
+  ): void {
     this.retryOutcomes.push({ stage, budget, outcome, attempts });
   }
 

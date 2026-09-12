@@ -325,6 +325,31 @@ is already up (`docker compose up -d --build triage-service`) and Set A is
 seeded, since the eval step needs both. `make preflight` runs the same
 thing from the repo root.
 
+### Postgres migrations
+
+The `postgres` service in `docker-compose.yml` provisions local Postgres for
+`service/prisma/schema.prisma` (infrastructure only for now — see
+`AGENTS.md`'s "Postgres + Prisma" section for what does and doesn't read
+from it yet). Nothing applies the checked-in init migration automatically,
+so a fresh `postgres` volume starts empty; run one of:
+
+```bash
+make migrate          # apply pending migrations (prisma migrate deploy)
+make migrate-status    # show applied/pending state (prisma migrate status)
+make migrate-down      # roll back the most recent migration
+```
+
+`migrate-down` is a manual procedure, not a Prisma built-in: Prisma has no
+single-step "down" command short of `migrate reset` (which wipes all data),
+so this applies that migration's own `down.sql` and then removes its row
+from Prisma's `_prisma_migrations` tracking table so `migrate status`/
+`migrate` see it as pending again. `migrate`/`migrate-status` run on the
+host against `postgres`'s published port (`DATABASE_URL` in the repo-root
+`.env`), the same convention `test`/`typecheck`/`lint` already use;
+`migrate-down` instead runs `psql` inside the `postgres` container via
+`docker compose exec`. Either way the `postgres` container must already be
+up (`docker compose up -d postgres`, or any `make up`).
+
 ## What I'd flag as rough edges / TODOs
 
 - The duplicate-judgment retry path (`findDuplicateVerdict` in

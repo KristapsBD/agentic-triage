@@ -3,7 +3,10 @@ import { DEFAULT_LABEL_COLOR } from './labels';
 import { Settings } from '../config/settings';
 
 function jsonResponse(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 function textResponse(status: number, body: string): Response {
@@ -74,7 +77,11 @@ describe('GiteaClient', () => {
   });
 
   it('paginates through open issues until a short page is returned', async () => {
-    const page1 = Array.from({ length: 50 }, (_, i) => ({ number: i + 1, title: `t${i}`, labels: [] }));
+    const page1 = Array.from({ length: 50 }, (_, i) => ({
+      number: i + 1,
+      title: `t${i}`,
+      labels: [],
+    }));
     const page2 = [{ number: 51, title: 't51', labels: [{ id: 1, name: 'backend' }] }];
     fetchMock
       .mockResolvedValueOnce(jsonResponse(200, page1))
@@ -84,7 +91,13 @@ describe('GiteaClient', () => {
     const issues = await client.listOpenIssues();
 
     expect(issues).toHaveLength(51);
-    expect(issues[50]).toEqual({ number: 51, title: 't51', body: '', labels: ['backend'], state: 'open' });
+    expect(issues[50]).toEqual({
+      number: 51,
+      title: 't51',
+      body: '',
+      labels: ['backend'],
+      state: 'open',
+    });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -206,7 +219,11 @@ describe('GiteaClient', () => {
   });
 
   it('stops paginating exactly when a full page is followed by an empty page', async () => {
-    const fullPage = Array.from({ length: 50 }, (_, i) => ({ number: i + 1, title: `t${i}`, labels: [] }));
+    const fullPage = Array.from({ length: 50 }, (_, i) => ({
+      number: i + 1,
+      title: `t${i}`,
+      labels: [],
+    }));
     fetchMock
       .mockResolvedValueOnce(jsonResponse(200, fullPage))
       .mockResolvedValueOnce(jsonResponse(200, []));

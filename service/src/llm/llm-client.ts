@@ -14,7 +14,12 @@ import { SETTINGS, Settings } from '../config/settings';
 import { COMPONENTS, SEVERITIES } from '../gitea/labels';
 import { ExtractionValidationError, TransientAPIError } from '../reports/pipeline.errors';
 import { parseDuplicateJudgment, parseTriageDecision } from '../reports/schemas';
-import { DuplicateCandidate, DuplicateJudgment, TokenUsage, TriageDecision } from '../reports/types';
+import {
+  DuplicateCandidate,
+  DuplicateJudgment,
+  TokenUsage,
+  TriageDecision,
+} from '../reports/types';
 
 const SYSTEM_PROMPT = `You are the extraction stage of an automated bug-triage pipeline.
 
@@ -84,20 +89,32 @@ const TRIAGE_TOOL: Anthropic.Tool = {
     type: 'object',
     properties: {
       title: { type: 'string' },
-      report_type: { type: 'string', enum: ['bug', 'feature_request', 'unclear', 'spam_or_off_topic'] },
+      report_type: {
+        type: 'string',
+        enum: ['bug', 'feature_request', 'unclear', 'spam_or_off_topic'],
+      },
       severity: { type: 'string', enum: [...SEVERITIES] },
       components: { type: 'array', items: { type: 'string', enum: [...COMPONENTS] } },
       repro_steps: { type: 'array', items: { type: 'string' } },
       supporting_evidence: { type: 'string' },
       distinct_issues: { type: 'array', items: { type: 'string' } },
     },
-    required: ['title', 'report_type', 'severity', 'components', 'repro_steps', 'supporting_evidence', 'distinct_issues'],
+    required: [
+      'title',
+      'report_type',
+      'severity',
+      'components',
+      'repro_steps',
+      'supporting_evidence',
+      'distinct_issues',
+    ],
   },
 };
 
 const DUPLICATE_JUDGMENT_TOOL: Anthropic.Tool = {
   name: 'submit_duplicate_judgment',
-  description: 'Submit a categorical judgment for whether the new report is the same bug as the candidate issue.',
+  description:
+    'Submit a categorical judgment for whether the new report is the same bug as the candidate issue.',
   input_schema: {
     type: 'object',
     properties: {
@@ -159,7 +176,10 @@ export class LlmClient {
     this.model = settings.anthropic_model;
   }
 
-  async extract(rawReport: string, feedback?: string | null): Promise<{ decision: TriageDecision; usage: TokenUsage }> {
+  async extract(
+    rawReport: string,
+    feedback?: string | null,
+  ): Promise<{ decision: TriageDecision; usage: TokenUsage }> {
     let userContent = `<untrusted_raw_report>\n${rawReport}\n</untrusted_raw_report>`;
     if (feedback) {
       userContent += `\n\nYour previous tool call failed validation with this error:\n${feedback}\nCorrect it and call the tool again.`;
@@ -182,7 +202,10 @@ export class LlmClient {
     }
     return {
       decision: parseTriageDecision(toolUse.input),
-      usage: { input_tokens: response.usage.input_tokens, output_tokens: response.usage.output_tokens },
+      usage: {
+        input_tokens: response.usage.input_tokens,
+        output_tokens: response.usage.output_tokens,
+      },
     };
   }
 
@@ -216,7 +239,10 @@ export class LlmClient {
     }
     return {
       judgment: parseDuplicateJudgment(toolUse.input),
-      usage: { input_tokens: response.usage.input_tokens, output_tokens: response.usage.output_tokens },
+      usage: {
+        input_tokens: response.usage.input_tokens,
+        output_tokens: response.usage.output_tokens,
+      },
     };
   }
 }

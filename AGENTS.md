@@ -32,16 +32,32 @@ service-local one, matching every other env-driven script's convention (see
 #58): nothing in the application reads from this database yet. The still-live SQLite
 `DecisionStore` (`service/src/decisions/decision-store.ts`) remains the real persistence
 path until issue #59 wires a `PrismaService` up to the existing `TriagePort` interface.
+Nothing applies the checked-in init migration automatically (not docker-compose,
+not `package.json`, not the Makefile), so a fresh `postgres` volume starts empty —
+run `make migrate` (wraps `prisma migrate deploy`). `make migrate-status` wraps
+`prisma migrate status`; `make migrate-down` is a manual rollback (Prisma has no
+single-step "down" short of `migrate reset`, which wipes all data) that applies
+the migration's own `down.sql` and then deletes its row from `_prisma_migrations`
+so `migrate`/`migrate-status` see it as pending again — see the "Postgres
+migrations" section in `README.md`.
 
-### Quality gate (complexity + coverage + mutation)
+### Quality gate (lint + format + complexity + coverage + mutation)
 
-`service`'s `npm run preflight` enforces ESLint `complexity` (ceiling 4), Jest
-`coverageThreshold` (80% lines/branches), and a StrykerJS mutation-score floor
-(`service/stryker.conf.json`, `thresholds.break` = 65%), all scoped to exclude
-`src/eval/**`, `src/scripts/**`, `*.module.ts`, and `main.ts`. Each check's
-threshold lives in that check's own native config file (ESLint rule config,
-Jest's `coverageThreshold`, Stryker's `thresholds`) rather than a shared file —
-follow that pattern for any future check. As of the gate landing (issue #2), the
+`service`'s `npm run preflight` runs, in order: `typecheck`, `lint`
+(`eslint --max-warnings=0`, including the type-checked
+`@typescript-eslint/no-floating-promises`/`no-misused-promises` rules),
+`format:check` (Prettier, config in `service/.prettierrc.json`),
+`format:prisma:check` (`service/scripts/check-prisma-format.sh` — a hand-rolled
+`--check` since Prisma's CLI has no such flag; it diffs a formatted scratch copy
+against the committed schema rather than mutating it), `test:coverage` (Jest
+`coverageThreshold`, 80% lines/branches), `eval`, and `test:mutation` (StrykerJS,
+`service/stryker.conf.json`, `thresholds.break` = 65%). Coverage/mutation are
+scoped to exclude `src/eval/**`, `src/scripts/**`, `*.module.ts`, and `main.ts`.
+Each check's threshold/config lives in that check's own native file (ESLint rule
+config, `.prettierrc.json`, Jest's `coverageThreshold`, Stryker's `thresholds`)
+rather than a shared file — follow that pattern for any future check. CI's `lint`
+job (`.github/workflows/quality-gate.yml`) runs `lint`, `format:check`, and
+`format:prisma:check` as separate steps. As of the gate landing (issue #2), the
 complexity ceiling is intentionally red against ~14 pre-existing functions —
 this is not a regression to fix opportunistically; remediation is tracked by the
 CRAP-ranked backlog issue (#5) and the tickets it generates, gating the freeze-lift

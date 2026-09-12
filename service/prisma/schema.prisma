@@ -117,43 +117,43 @@ enum PipelineStage {
 
 /// Header table: one row per Raw Report submission, keyed by report hash.
 model Decision {
-  id        String   @id @default(cuid())
-  reportHash String  @unique @map("report_hash")
-  rawReport String   @map("raw_report")
-  status    DecisionStatus
-  createdAt DateTime @map("created_at")
-  updatedAt DateTime @map("updated_at")
+  id         String         @id @default(cuid())
+  reportHash String         @unique @map("report_hash")
+  rawReport  String         @map("raw_report")
+  status     DecisionStatus
+  createdAt  DateTime       @map("created_at")
+  updatedAt  DateTime       @map("updated_at")
 
-  validationRetriesConsumed Int        @map("validation_retries_consumed")
-  validationBudgetExhausted Boolean    @map("validation_budget_exhausted")
+  validationRetriesConsumed Int         @map("validation_retries_consumed")
+  validationBudgetExhausted Boolean     @map("validation_budget_exhausted")
   confidence                Confidence?
-  transientRetriesConsumed  Int        @map("transient_retries_consumed")
+  transientRetriesConsumed  Int         @map("transient_retries_consumed")
 
   outcome          Outcome?
   giteaIssueNumber Int?     @map("gitea_issue_number")
   error            String?
 
   // Flattened `triage_decision` fields.
-  title               String?
-  reportType          ReportType?  @map("report_type")
-  severity            Severity?
-  components          Component[]
-  reproSteps          String[]     @map("repro_steps")
-  supportingEvidence  String?      @map("supporting_evidence")
-  distinctIssues      String[]     @map("distinct_issues")
+  title              String?
+  reportType         ReportType? @map("report_type")
+  severity           Severity?
+  components         Component[]
+  reproSteps         String[]    @map("repro_steps")
+  supportingEvidence String?     @map("supporting_evidence")
+  distinctIssues     String[]    @map("distinct_issues")
 
   // Flattened `duplicate_verdict` fields.
-  duplicateTier         DuplicateTier? @map("duplicate_tier")
-  duplicateTargetIssue  Int?           @map("duplicate_target_issue")
-  duplicateSimilarity   Float?         @map("duplicate_similarity")
-  duplicateRationale    String?        @map("duplicate_rationale")
+  duplicateTier        DuplicateTier? @map("duplicate_tier")
+  duplicateTargetIssue Int?           @map("duplicate_target_issue")
+  duplicateSimilarity  Float?         @map("duplicate_similarity")
+  duplicateRationale   String?        @map("duplicate_rationale")
 
   // Flattened `pending_action` fields.
-  actionType         PendingActionType? @map("action_type")
-  actionTitle        String?            @map("action_title")
-  actionBody         String?            @map("action_body")
-  actionLabels       String[]           @map("action_labels")
-  actionTargetIssue  Int?               @map("action_target_issue")
+  actionType        PendingActionType? @map("action_type")
+  actionTitle       String?            @map("action_title")
+  actionBody        String?            @map("action_body")
+  actionLabels      String[]           @map("action_labels")
+  actionTargetIssue Int?               @map("action_target_issue")
 
   duplicateCandidates DuplicateCandidate[]
   tokenUsages         TokenUsage[]
@@ -177,13 +177,13 @@ model DuplicateCandidate {
 
 /// LLM token-usage history, one row per call made while processing a decision.
 model TokenUsage {
-  id                   String  @id @default(cuid())
-  decisionId           String  @map("decision_id")
+  id                   String   @id @default(cuid())
+  decisionId           String   @map("decision_id")
   decision             Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
   call                 LlmCall
-  candidateIssueNumber Int?    @map("candidate_issue_number")
-  inputTokens          Int     @map("input_tokens")
-  outputTokens         Int     @map("output_tokens")
+  candidateIssueNumber Int?     @map("candidate_issue_number")
+  inputTokens          Int      @map("input_tokens")
+  outputTokens         Int      @map("output_tokens")
 
   @@map("token_usage")
 }

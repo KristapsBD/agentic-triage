@@ -43,7 +43,12 @@ function sampleRecord(): DecisionRecord {
       supporting_evidence: null,
       distinct_issues: [],
     },
-    duplicate_verdict: { tier: 'not_a_duplicate', target_issue: null, similarity: null, rationale: '' },
+    duplicate_verdict: {
+      tier: 'not_a_duplicate',
+      target_issue: null,
+      similarity: null,
+      rationale: '',
+    },
     pending_action: null,
     outcome: 'issue_created',
     gitea_issue_number: 42,
@@ -60,7 +65,12 @@ function sampleRecord(): DecisionRecord {
     ],
     token_usage: [
       { call: 'extract', candidate_issue_number: null, input_tokens: 500, output_tokens: 80 },
-      { call: 'duplicate_judgment', candidate_issue_number: 7, input_tokens: 200, output_tokens: 10 },
+      {
+        call: 'duplicate_judgment',
+        candidate_issue_number: 7,
+        input_tokens: 200,
+        output_tokens: 10,
+      },
     ],
     stage_timings_ms: [
       { stage: 'extraction', duration_ms: 850, candidate_issue_number: null },
@@ -100,12 +110,16 @@ describe('DecisionStore', () => {
     store.save(record);
 
     const raw = new Database(dbPath);
-    const row = raw.prepare('SELECT payload FROM decision_records WHERE report_hash = ?').get('hash-1') as { payload: string };
+    const row = raw
+      .prepare('SELECT payload FROM decision_records WHERE report_hash = ?')
+      .get('hash-1') as { payload: string };
     raw.close();
 
     const persisted = JSON.parse(row.payload) as DecisionRecord;
     expect(persisted.transient_retries_consumed).toBe(2);
-    expect(persisted.duplicate_candidates_considered).toEqual(record.duplicate_candidates_considered);
+    expect(persisted.duplicate_candidates_considered).toEqual(
+      record.duplicate_candidates_considered,
+    );
     expect(persisted.token_usage).toEqual(record.token_usage);
     expect(persisted.stage_timings_ms).toEqual(record.stage_timings_ms);
   });
@@ -129,7 +143,12 @@ describe('DecisionStore', () => {
 
   it('new fields stay nullable/additive -- an update overwrites the row rather than merging', () => {
     const store = new DecisionStore({ ...BASE_SETTINGS, decision_db_path: dbPath });
-    const pending: DecisionRecord = { ...sampleRecord(), status: 'pending', token_usage: [], stage_timings_ms: [] };
+    const pending: DecisionRecord = {
+      ...sampleRecord(),
+      status: 'pending',
+      token_usage: [],
+      stage_timings_ms: [],
+    };
     store.save(pending);
 
     const completed = sampleRecord();

@@ -23,7 +23,14 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 import { loadSettings } from '../config/settings';
-import { Component, Confidence, DuplicateTier, Outcome, ReportType, Severity } from '../reports/types';
+import {
+  Component,
+  Confidence,
+  DuplicateTier,
+  Outcome,
+  ReportType,
+  Severity,
+} from '../reports/types';
 import { findGiteaIssueNumber } from './gitea-issue-resolution';
 
 const BASE_URL = process.env.TRIAGE_SERVICE_URL ?? 'http://localhost:8000';
@@ -55,14 +62,18 @@ interface Case {
 function checkReportType(expected: ReportType): Check {
   return (body) => {
     const actual = body.triage_decision?.report_type;
-    return actual === expected ? [] : [`expected report_type=${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`];
+    return actual === expected
+      ? []
+      : [`expected report_type=${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`];
   };
 }
 
 function checkSeverity(expected: Severity): Check {
   return (body) => {
     const actual = body.triage_decision?.severity;
-    return actual === expected ? [] : [`expected severity=${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`];
+    return actual === expected
+      ? []
+      : [`expected severity=${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`];
   };
 }
 
@@ -84,7 +95,9 @@ function checkComponentsIntersects(expectedAnyOf: ReadonlySet<Component>): Check
     const actual = body.triage_decision?.components ?? [];
     if (actual.length === 0) return ['components was empty'];
     if (!actual.some((c) => expectedAnyOf.has(c))) {
-      return [`expected components to include one of ${JSON.stringify([...expectedAnyOf])}, got ${JSON.stringify(actual)}`];
+      return [
+        `expected components to include one of ${JSON.stringify([...expectedAnyOf])}, got ${JSON.stringify(actual)}`,
+      ];
     }
     return [];
   };
@@ -108,22 +121,34 @@ function checkConfidenceNot(...excluded: Confidence[]): Check {
 }
 
 function checkOutcome(expected: Outcome): Check {
-  return (body) => (body.outcome === expected ? [] : [`expected outcome=${JSON.stringify(expected)}, got ${JSON.stringify(body.outcome)}`]);
+  return (body) =>
+    body.outcome === expected
+      ? []
+      : [`expected outcome=${JSON.stringify(expected)}, got ${JSON.stringify(body.outcome)}`];
 }
 
-function checkDuplicateTier(expectedTier: DuplicateTier, expectedTargetTitleSubstring?: string): Check {
+function checkDuplicateTier(
+  expectedTier: DuplicateTier,
+  expectedTargetTitleSubstring?: string,
+): Check {
   return async (body) => {
     const failures: string[] = [];
     const verdict = body.duplicate_verdict ?? {};
     if (verdict.tier !== expectedTier) {
-      failures.push(`expected duplicate tier=${JSON.stringify(expectedTier)}, got ${JSON.stringify(verdict.tier)}`);
+      failures.push(
+        `expected duplicate tier=${JSON.stringify(expectedTier)}, got ${JSON.stringify(verdict.tier)}`,
+      );
     }
     if (expectedTargetTitleSubstring !== undefined) {
       const expectedNumber = await findGiteaIssueNumber(SETTINGS, expectedTargetTitleSubstring);
       if (expectedNumber === null) {
-        failures.push(`could not resolve expected target issue for ${JSON.stringify(expectedTargetTitleSubstring)}`);
+        failures.push(
+          `could not resolve expected target issue for ${JSON.stringify(expectedTargetTitleSubstring)}`,
+        );
       } else if (verdict.target_issue !== expectedNumber) {
-        failures.push(`expected duplicate target_issue=#${expectedNumber}, got ${JSON.stringify(verdict.target_issue)}`);
+        failures.push(
+          `expected duplicate target_issue=#${expectedNumber}, got ${JSON.stringify(verdict.target_issue)}`,
+        );
       }
     }
     return failures;
@@ -185,14 +210,21 @@ const CASES: Case[] = [
       "I can't log in on my iPhone. I open the app in Safari, type my details, tap the " +
       'login button and literally nothing happens. My colleague has the same problem on ' +
       'her phone.',
-    check: all(checkDuplicateTier('clear_duplicate', 'Login button unresponsive on mobile Safari'), checkConfidenceNot('low')),
+    check: all(
+      checkDuplicateTier('clear_duplicate', 'Login button unresponsive on mobile Safari'),
+      checkConfidenceNot('low'),
+    ),
   },
   {
     id: 'B6_feature_request',
     rawReport:
       'It would be really nice if we could export reports to PDF as well as CSV. A lot of ' +
       'our customers ask for this.',
-    check: all(checkReportType('feature_request'), checkOutcome('feature_request_filed'), checkConfidenceNot('low')),
+    check: all(
+      checkReportType('feature_request'),
+      checkOutcome('feature_request_filed'),
+      checkConfidenceNot('low'),
+    ),
   },
   {
     id: 'B7_bundled_report',
@@ -213,7 +245,11 @@ const CASES: Case[] = [
       '[2025-06-01 09:14:23] INFO  returning 500\n' +
       '```\n' +
       'basically checkout dies sometimes',
-    check: all(checkReportType('bug'), checkSeverityNot('critical', 'low'), checkConfidenceNot('low')),
+    check: all(
+      checkReportType('bug'),
+      checkSeverityNot('critical', 'low'),
+      checkConfidenceNot('low'),
+    ),
   },
   // Self-authored near-miss cases (ticket #9/#30): same area as an existing
   // issue but a genuinely different bug -- proves the Duplicate Verdict
@@ -247,7 +283,10 @@ async function run(): Promise<number> {
       });
       const body = (await resp.json()) as ResponseBody;
       if (resp.status !== 200) {
-        results.push({ id: testCase.id, failures: [`HTTP ${resp.status}: ${JSON.stringify(body)}`] });
+        results.push({
+          id: testCase.id,
+          failures: [`HTTP ${resp.status}: ${JSON.stringify(body)}`],
+        });
         continue;
       }
       const failures = await testCase.check(body);
@@ -274,4 +313,10 @@ async function run(): Promise<number> {
   return passed === results.length ? 0 : 1;
 }
 
-run().then((code) => process.exit(code));
+run().then(
+  (code) => process.exit(code),
+  (err: unknown) => {
+    console.error(err);
+    process.exit(1);
+  },
+);

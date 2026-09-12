@@ -3,7 +3,10 @@ import { APP_FILTER } from '@nestjs/core';
 import { ConfigModule } from './config/config.module';
 import { GiteaModule } from './gitea/gitea.module';
 import { HealthModule } from './health/health.module';
-import { PipelineExceptionFilter, PipelineRejectedExceptionFilter } from './reports/pipeline-exception.filter';
+import {
+  PipelineExceptionFilter,
+  PipelineRejectedExceptionFilter,
+} from './reports/pipeline-exception.filter';
 import { ReportsModule } from './reports/reports.module';
 import { TelemetryModule } from './telemetry/telemetry.module';
 

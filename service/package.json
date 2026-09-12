@@ -9,8 +9,12 @@
     "start:dev": "ts-node-dev --respawn --exit-child --transpile-only src/main.ts",
     "start:prod": "node dist/main.js",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint \"src/**/*.ts\"",
+    "lint": "eslint \"src/**/*.ts\" --max-warnings=0",
     "lint:fix": "eslint \"src/**/*.ts\" --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "format:prisma": "prisma format --schema prisma/schema.prisma",
+    "format:prisma:check": "bash scripts/check-prisma-format.sh",
     "test": "jest",
     "test:coverage": "jest --coverage",
     "test:watch": "jest --watch",
@@ -22,7 +26,7 @@
     "eval:set-d": "ts-node src/eval/eval-set-d.ts",
     "eval": "npm run verify:duplicate-thresholds && npm run eval:set-b && npm run eval:set-c",
     "test:mutation": "stryker run",
-    "preflight": "npm run typecheck && npm run lint && npm run test:coverage && npm run eval && npm run test:mutation"
+    "preflight": "npm run typecheck && npm run lint && npm run format:check && npm run format:prisma:check && npm run test:coverage && npm run eval && npm run test:mutation"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
@@ -50,6 +54,7 @@
     "@types/node": "^24.13.3",
     "eslint": "^10.9.1",
     "jest": "^30.4.2",
+    "prettier": "^3.9.6",
     "prisma": "^6.19.3",
     "ts-jest": "^29.4.12",
     "ts-node": "^10.9.2",
