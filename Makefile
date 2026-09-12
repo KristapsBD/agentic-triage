@@ -2,6 +2,7 @@
 .PHONY: help bootstrap up down stop restart recreate build logs logs-service logs-gitea ps \
 	sh sh-gitea gitea-cli seed eval eval-set-d reset-demo fresh-start \
 	test test-watch typecheck lint preflight check status clean-volumes \
+	migrate migrate-status migrate-down \
 	add
 
 # ---- Help -----------------------------------------------------------------
@@ -108,6 +109,18 @@ preflight: ## Local pre-demo regression check: typecheck + lint + unit tests + e
 	cd service && npm run preflight
 
 check: test typecheck lint
+
+# ---- Postgres / Prisma migrations ------------------------------------------
+
+migrate: ## Apply pending Prisma migrations to the local Postgres DB (postgres container must be up)
+	cd service && npx prisma migrate deploy
+
+migrate-status: ## Show which Prisma migrations are applied/pending against the local Postgres DB
+	cd service && npx prisma migrate status
+
+migrate-down: ## Roll back the most recent migration (manual procedure: Prisma has no built-in "down" short of `migrate reset`, which wipes all data — `migrate resolve --rolled-back` only covers a *failed* migration, not a successful one, so this runs that migration's down.sql, then deletes its own row from Prisma's _prisma_migrations tracking table so `migrate status`/`deploy` see it as pending again)
+	docker compose exec -T postgres psql -U triage -d triage -f - < service/prisma/migrations/20260912142000_init/down.sql
+	docker compose exec -T postgres psql -U triage -d triage -c "DELETE FROM _prisma_migrations WHERE migration_name = '20260912142000_init';"
 
 # ---- Git shortcuts ---------------------------------------------------------
 
