@@ -1,0 +1,202 @@
+// Prisma schema for the Decision Record persistence layer (issue #58).
+// Mirrors service/src/reports/types.ts's DecisionRecord shape, normalized:
+// the DecisionRecord header becomes `Decision`, and its three embedded
+// evidence-trail arrays become their own queryable child tables. See
+// docs/adr/0012-decision-record-stays-canonical-narrative.md and issue #57
+// for why this data must stay directly SQL-queryable.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DecisionStatus {
+  pending
+  processing
+  completed
+  gitea_call_failed
+
+  @@map("decision_status")
+}
+
+enum Outcome {
+  issue_created
+  duplicate_commented
+  review_flagged
+  feature_request_filed
+  dropped_spam
+
+  @@map("outcome")
+}
+
+enum Confidence {
+  high
+  medium
+  low
+
+  @@map("confidence")
+}
+
+enum ReportType {
+  bug
+  feature_request
+  unclear
+  spam_or_off_topic
+
+  @@map("report_type")
+}
+
+enum Severity {
+  critical
+  high
+  medium
+  low
+
+  @@map("severity")
+}
+
+enum Component {
+  frontend
+  backend
+  api
+  auth
+  database
+  infra
+  docs
+  unknown
+
+  @@map("component")
+}
+
+enum DuplicateTier {
+  clear_duplicate
+  possible_duplicate
+  not_a_duplicate
+
+  @@map("duplicate_tier")
+}
+
+enum SameBugJudgment {
+  yes
+  possibly
+  no
+
+  @@map("same_bug_judgment")
+}
+
+enum PendingActionType {
+  create_issue
+  comment
+  none
+
+  @@map("pending_action_type")
+}
+
+enum LlmCall {
+  extract
+  duplicate_judgment
+
+  @@map("llm_call")
+}
+
+enum PipelineStage {
+  extraction
+  embedding_retrieval
+  duplicate_judgment
+  gitea_list_open_issues
+  gitea_create_issue
+  gitea_comment_issue
+  end_to_end
+
+  @@map("pipeline_stage")
+}
+
+/// Header table: one row per Raw Report submission, keyed by report hash.
+model Decision {
+  id        String   @id @default(cuid())
+  reportHash String  @unique @map("report_hash")
+  rawReport String   @map("raw_report")
+  status    DecisionStatus
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  validationRetriesConsumed Int        @map("validation_retries_consumed")
+  validationBudgetExhausted Boolean    @map("validation_budget_exhausted")
+  confidence                Confidence?
+  transientRetriesConsumed  Int        @map("transient_retries_consumed")
+
+  outcome          Outcome?
+  giteaIssueNumber Int?     @map("gitea_issue_number")
+  error            String?
+
+  // Flattened `triage_decision` fields.
+  title               String?
+  reportType          ReportType?  @map("report_type")
+  severity            Severity?
+  components          Component[]
+  reproSteps          String[]     @map("repro_steps")
+  supportingEvidence  String?      @map("supporting_evidence")
+  distinctIssues      String[]     @map("distinct_issues")
+
+  // Flattened `duplicate_verdict` fields.
+  duplicateTier         DuplicateTier? @map("duplicate_tier")
+  duplicateTargetIssue  Int?           @map("duplicate_target_issue")
+  duplicateSimilarity   Float?         @map("duplicate_similarity")
+  duplicateRationale    String?        @map("duplicate_rationale")
+
+  // Flattened `pending_action` fields.
+  actionType         PendingActionType? @map("action_type")
+  actionTitle        String?            @map("action_title")
+  actionBody         String?            @map("action_body")
+  actionLabels       String[]           @map("action_labels")
+  actionTargetIssue  Int?               @map("action_target_issue")
+
+  duplicateCandidates DuplicateCandidate[]
+  tokenUsages         TokenUsage[]
+  stageTimings        StageTiming[]
+
+  @@map("decisions")
+}
+
+/// Duplicate-candidate evidence trail: which issues were considered and how
+/// they were judged, one row per candidate per decision.
+model DuplicateCandidate {
+  id          String           @id @default(cuid())
+  decisionId  String           @map("decision_id")
+  decision    Decision         @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  issueNumber Int              @map("issue_number")
+  similarity  Float
+  sameBug     SameBugJudgment? @map("same_bug")
+
+  @@map("duplicate_candidates")
+}
+
+/// LLM token-usage history, one row per call made while processing a decision.
+model TokenUsage {
+  id                   String  @id @default(cuid())
+  decisionId           String  @map("decision_id")
+  decision             Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  call                 LlmCall
+  candidateIssueNumber Int?    @map("candidate_issue_number")
+  inputTokens          Int     @map("input_tokens")
+  outputTokens         Int     @map("output_tokens")
+
+  @@map("token_usage")
+}
+
+/// Per-stage pipeline latency history, one row per stage timed while
+/// processing a decision.
+model StageTiming {
+  id                   String        @id @default(cuid())
+  decisionId           String        @map("decision_id")
+  decision             Decision      @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  stage                PipelineStage
+  durationMs           Int           @map("duration_ms")
+  candidateIssueNumber Int?          @map("candidate_issue_number")
+
+  @@map("stage_timings")
+}

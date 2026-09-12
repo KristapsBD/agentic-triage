@@ -27,6 +27,24 @@ services:
       timeout: 5s
       retries: 20
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: bug-triage-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=triage
+      - POSTGRES_PASSWORD=triage
+      - POSTGRES_DB=triage
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U triage -d triage"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   triage-service:
     build:
       context: ./service
@@ -34,8 +52,9 @@ services:
     env_file:
       - .env
     environment:
-      # Override the host-facing GITEA_URL from .env with the in-network address.
+      # Override the host-facing GITEA_URL/DATABASE_URL from .env with in-network addresses.
       - GITEA_URL=http://gitea:3000
+      - DATABASE_URL=postgresql://triage:triage@postgres:5432/triage?schema=public
       - DECISION_DB_PATH=/data/decisions.sqlite3
     volumes:
       - ./service:/app
@@ -141,6 +160,7 @@ services:
 volumes:
   gitea-data:
   triage-decisions:
+  postgres-data:
   prometheus-data:
   loki-data:
   grafana-data:

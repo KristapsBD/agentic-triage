@@ -8,6 +8,7 @@ export interface Settings {
   anthropic_api_key: string;
   anthropic_model: string;
   decision_db_path: string;
+  database_url: string;
   embedding_model_name: string;
   duplicate_similarity_floor: number;
   duplicate_top_k: number;
@@ -51,6 +52,13 @@ function loadAnthropicSettings(env: NodeJS.ProcessEnv) {
 function loadDuplicateDetectionSettings(env: NodeJS.ProcessEnv) {
   return {
     decision_db_path: optionalString(env, 'DECISION_DB_PATH', '/data/decisions.sqlite3'),
+    // Prisma convention; not yet consumed by application code (issue #58 is
+    // infrastructure only -- see issue #59 for wiring a PrismaService up to it).
+    database_url: optionalString(
+      env,
+      'DATABASE_URL',
+      'postgresql://triage:triage@localhost:5432/triage?schema=public',
+    ),
     embedding_model_name: optionalString(env, 'EMBEDDING_MODEL_NAME', 'Xenova/all-MiniLM-L6-v2'),
     duplicate_similarity_floor: optionalNumber(env, 'DUPLICATE_SIMILARITY_FLOOR', '0.35'),
     duplicate_top_k: optionalNumber(env, 'DUPLICATE_TOP_K', '3'),
