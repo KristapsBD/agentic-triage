@@ -74,7 +74,10 @@ describe('EmbeddingIndex', () => {
     ]);
 
     expect(mockedPipeline).toHaveBeenCalledTimes(1);
-    expect(mockedPipeline).toHaveBeenCalledWith('feature-extraction', settings.embedding_model_name);
+    expect(mockedPipeline).toHaveBeenCalledWith(
+      'feature-extraction',
+      settings.embedding_model_name,
+    );
     expect(extractor).toHaveBeenCalledTimes(3);
   });
 

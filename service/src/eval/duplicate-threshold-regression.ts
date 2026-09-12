@@ -42,23 +42,37 @@ async function checkClearDuplicate(index: EmbeddingIndex): Promise<CaseResult> {
   const candidates = await index.findCandidates(CLEAR_DUPLICATE_REPORT.text, SET_A);
   const top = candidates[0];
   if (top === undefined) {
-    failures.push(`no candidate cleared the retrieval floor at all (expected #${CLEAR_DUPLICATE_REPORT.targetIssueNumber})`);
+    failures.push(
+      `no candidate cleared the retrieval floor at all (expected #${CLEAR_DUPLICATE_REPORT.targetIssueNumber})`,
+    );
   } else if (top.issue_number !== CLEAR_DUPLICATE_REPORT.targetIssueNumber) {
-    failures.push(`expected top candidate #${CLEAR_DUPLICATE_REPORT.targetIssueNumber}, got #${top.issue_number} (sim=${top.similarity.toFixed(4)})`);
+    failures.push(
+      `expected top candidate #${CLEAR_DUPLICATE_REPORT.targetIssueNumber}, got #${top.issue_number} (sim=${top.similarity.toFixed(4)})`,
+    );
   } else if (top.similarity < CLEAR_BAND_MIN) {
-    failures.push(`similarity ${top.similarity.toFixed(4)} fell below the clear-duplicate band (>= ${CLEAR_BAND_MIN})`);
+    failures.push(
+      `similarity ${top.similarity.toFixed(4)} fell below the clear-duplicate band (>= ${CLEAR_BAND_MIN})`,
+    );
   }
   return { id: CLEAR_DUPLICATE_REPORT.name, failures };
 }
 
-async function checkNearMiss(index: EmbeddingIndex, floor: number, nearMiss: { name: string; text: string }): Promise<CaseResult> {
+async function checkNearMiss(
+  index: EmbeddingIndex,
+  floor: number,
+  nearMiss: { name: string; text: string },
+): Promise<CaseResult> {
   const failures: string[] = [];
   const candidates = await index.findCandidates(nearMiss.text, SET_A);
   const top = candidates[0];
   if (top === undefined) {
-    failures.push(`no candidate cleared duplicate_similarity_floor=${floor} -- would never reach the LLM judge`);
+    failures.push(
+      `no candidate cleared duplicate_similarity_floor=${floor} -- would never reach the LLM judge`,
+    );
   } else if (top.similarity >= CLEAR_BAND_MIN) {
-    failures.push(`similarity ${top.similarity.toFixed(4)} rose into the clear-duplicate band (>= ${CLEAR_BAND_MIN}) -- false-merge risk`);
+    failures.push(
+      `similarity ${top.similarity.toFixed(4)} rose into the clear-duplicate band (>= ${CLEAR_BAND_MIN}) -- false-merge risk`,
+    );
   }
   return { id: nearMiss.name, failures };
 }
@@ -67,7 +81,9 @@ async function checkUnrelated(index: EmbeddingIndex): Promise<CaseResult> {
   const candidates = await index.findCandidates(UNRELATED_REPORT.text, SET_A);
   const failures =
     candidates.length > 0
-      ? [`expected nothing to clear the floor, got ${candidates.map((c) => `#${c.issue_number}=${c.similarity.toFixed(4)}`).join(', ')}`]
+      ? [
+          `expected nothing to clear the floor, got ${candidates.map((c) => `#${c.issue_number}=${c.similarity.toFixed(4)}`).join(', ')}`,
+        ]
       : [];
   return { id: UNRELATED_REPORT.name, failures };
 }
@@ -78,7 +94,9 @@ async function main(): Promise<void> {
 
   const results: CaseResult[] = [
     await checkClearDuplicate(index),
-    ...(await Promise.all(NEAR_MISS_REPORTS.map((r) => checkNearMiss(index, settings.duplicate_similarity_floor, r)))),
+    ...(await Promise.all(
+      NEAR_MISS_REPORTS.map((r) => checkNearMiss(index, settings.duplicate_similarity_floor, r)),
+    )),
     await checkUnrelated(index),
   ];
 

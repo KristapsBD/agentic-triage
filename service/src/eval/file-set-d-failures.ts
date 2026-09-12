@@ -56,7 +56,12 @@ async function alreadyFiled(caseId: string): Promise<boolean> {
  * rationale (always needs-triage, never needs-info; raw report/response
  * written verbatim into the issue body).
  */
-export async function fileSetDFailure(caseId: string, failures: string[], rawReport: string, response: unknown): Promise<void> {
+export async function fileSetDFailure(
+  caseId: string,
+  failures: string[],
+  rawReport: string,
+  response: unknown,
+): Promise<void> {
   if (await alreadyFiled(caseId)) {
     console.log(`    (skipped filing: an open issue for ${caseId} already exists)`);
     return;

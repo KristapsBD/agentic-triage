@@ -7,7 +7,12 @@
 
 import { Counter, Histogram, Registry } from 'prom-client';
 import { DuplicateTier, LlmCallUsage, Outcome, StageTiming } from '../reports/types';
-import { RetryBudgetKind, RetryOutcomeKind, RetryStage, TelemetryRecorder } from './telemetry-recorder.interface';
+import {
+  RetryBudgetKind,
+  RetryOutcomeKind,
+  RetryStage,
+  TelemetryRecorder,
+} from './telemetry-recorder.interface';
 
 export class PrometheusTelemetryRecorder implements TelemetryRecorder {
   readonly registry = new Registry();
@@ -62,7 +67,12 @@ export class PrometheusTelemetryRecorder implements TelemetryRecorder {
     registers: [this.registry],
   });
 
-  recordRetryOutcome(stage: RetryStage, budget: RetryBudgetKind, outcome: RetryOutcomeKind, attempts: number): void {
+  recordRetryOutcome(
+    stage: RetryStage,
+    budget: RetryBudgetKind,
+    outcome: RetryOutcomeKind,
+    attempts: number,
+  ): void {
     this.retryOutcomes.labels(stage, budget, outcome).inc();
     this.retryAttempts.labels(stage, budget).observe(attempts);
   }
@@ -86,10 +96,20 @@ export class PrometheusTelemetryRecorder implements TelemetryRecorder {
 
   recordDuplicateJudgmentSkipped(reportHash: string, candidateIssueNumber: number): void {
     this.duplicateJudgmentSilentSkips.inc();
-    this.logStage(reportHash, 'duplicate_judgment_silent_skip', { candidate_issue_number: candidateIssueNumber });
+    this.logStage(reportHash, 'duplicate_judgment_silent_skip', {
+      candidate_issue_number: candidateIssueNumber,
+    });
   }
 
   logStage(reportHash: string, stage: string, fields: Record<string, unknown> = {}): void {
-    console.log(JSON.stringify({ level: 'info', time: Date.now(), report_hash: reportHash, stage, ...fields }));
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        time: Date.now(),
+        report_hash: reportHash,
+        stage,
+        ...fields,
+      }),
+    );
   }
 }

@@ -25,9 +25,12 @@ describe('decideFixLoopAction', () => {
     expect(decideFixLoopAction(3, 'changes_requested')).toBe('escalate');
   });
 
-  it.each([1, 2, 3])('stays open on a pending/rate-limited verdict without escalating or consuming an attempt (attempt %i)', (attempt) => {
-    expect(decideFixLoopAction(attempt, 'pending')).toBe('wait');
-  });
+  it.each([1, 2, 3])(
+    'stays open on a pending/rate-limited verdict without escalating or consuming an attempt (attempt %i)',
+    (attempt) => {
+      expect(decideFixLoopAction(attempt, 'pending')).toBe('wait');
+    },
+  );
 
   it('does not report pending as done', () => {
     expect(decideFixLoopAction(1, 'pending')).not.toBe('done');

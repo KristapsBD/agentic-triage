@@ -47,7 +47,7 @@ const SET_A = [
     title: 'Dashboard charts render blank on first load',
     body:
       'On first page load the dashboard charts are empty. A manual refresh fixes ' +
-      "it.\nSeems like a race with the data fetch.",
+      'it.\nSeems like a race with the data fetch.',
     labels: ['frontend', 'medium'],
   },
 ] as const;

@@ -40,12 +40,12 @@ describe('loadSettings', () => {
   });
 
   it('strips one or more trailing slashes from GITEA_URL', () => {
-    expect(
-      loadSettings({ ...REQUIRED_ENV, GITEA_URL: 'http://localhost:3000/' }).gitea_url,
-    ).toBe('http://localhost:3000');
-    expect(
-      loadSettings({ ...REQUIRED_ENV, GITEA_URL: 'http://localhost:3000///' }).gitea_url,
-    ).toBe('http://localhost:3000');
+    expect(loadSettings({ ...REQUIRED_ENV, GITEA_URL: 'http://localhost:3000/' }).gitea_url).toBe(
+      'http://localhost:3000',
+    );
+    expect(loadSettings({ ...REQUIRED_ENV, GITEA_URL: 'http://localhost:3000///' }).gitea_url).toBe(
+      'http://localhost:3000',
+    );
   });
 
   it('preserves a GITEA_URL with no trailing slash', () => {

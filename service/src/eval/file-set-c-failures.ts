@@ -74,7 +74,12 @@ async function alreadyFiled(caseId: string): Promise<boolean> {
  * Set C findings as untrusted, but worth keeping in mind before this gets
  * more automated consumers.
  */
-export async function fileSetCFailure(caseId: string, failures: string[], rawReport: string, response: unknown): Promise<void> {
+export async function fileSetCFailure(
+  caseId: string,
+  failures: string[],
+  rawReport: string,
+  response: unknown,
+): Promise<void> {
   if (await alreadyFiled(caseId)) {
     console.log(`    (skipped filing: an open issue for ${caseId} already exists)`);
     return;

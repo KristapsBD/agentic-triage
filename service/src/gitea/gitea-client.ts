@@ -33,7 +33,10 @@ export class GiteaClient {
 
   constructor(@Inject(SETTINGS) settings: Settings) {
     this.base = `${settings.gitea_url}/api/v1/repos/${settings.gitea_repo_owner}/${settings.gitea_repo_name}`;
-    this.headers = { Authorization: `token ${settings.gitea_token}`, 'Content-Type': 'application/json' };
+    this.headers = {
+      Authorization: `token ${settings.gitea_token}`,
+      'Content-Type': 'application/json',
+    };
   }
 
   private async request(method: string, path: string, body?: unknown): Promise<Response> {
@@ -57,10 +60,16 @@ export class GiteaClient {
 
   private async throwIfErrorStatus(response: Response): Promise<void> {
     if (response.status >= 500) {
-      throw new GiteaError(`Gitea returned ${response.status}: ${(await response.text()).slice(0, 300)}`, response.status);
+      throw new GiteaError(
+        `Gitea returned ${response.status}: ${(await response.text()).slice(0, 300)}`,
+        response.status,
+      );
     }
     if (response.status >= 400) {
-      throw new GiteaError(`Gitea rejected request (${response.status}): ${(await response.text()).slice(0, 300)}`, response.status);
+      throw new GiteaError(
+        `Gitea rejected request (${response.status}): ${(await response.text()).slice(0, 300)}`,
+        response.status,
+      );
     }
   }
 

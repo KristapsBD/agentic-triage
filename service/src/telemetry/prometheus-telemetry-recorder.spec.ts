@@ -23,8 +23,17 @@ describe('PrometheusTelemetryRecorder', () => {
 
     recorder.recordOutcome('issue_created');
     recorder.recordDuplicateVerdict('clear_duplicate');
-    recorder.recordTokenUsage({ call: 'extract', candidate_issue_number: null, input_tokens: 10, output_tokens: 5 });
-    recorder.recordStageLatency({ stage: 'extraction', duration_ms: 42, candidate_issue_number: null });
+    recorder.recordTokenUsage({
+      call: 'extract',
+      candidate_issue_number: null,
+      input_tokens: 10,
+      output_tokens: 5,
+    });
+    recorder.recordStageLatency({
+      stage: 'extraction',
+      duration_ms: 42,
+      candidate_issue_number: null,
+    });
     recorder.recordRetryOutcome('extraction', 'validation', 'succeeded', 1);
     recorder.recordDuplicateJudgmentSkipped('deadbeef', 7);
 
@@ -64,6 +73,10 @@ describe('PrometheusTelemetryRecorder', () => {
 
     expect(logSpy).toHaveBeenCalledTimes(1);
     const line = JSON.parse(logSpy.mock.calls[0][0] as string);
-    expect(line).toMatchObject({ report_hash: 'abc123', stage: 'duplicate_judgment_silent_skip', candidate_issue_number: 9 });
+    expect(line).toMatchObject({
+      report_hash: 'abc123',
+      stage: 'duplicate_judgment_silent_skip',
+      candidate_issue_number: 9,
+    });
   });
 });
