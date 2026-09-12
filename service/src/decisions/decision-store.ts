@@ -11,7 +11,11 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { DecisionRecord } from '../reports/types';
-import { fromDecisionRow, toDecisionCreateInput, toDecisionReplaceUpdateInput } from './decision-record.mapper';
+import {
+  fromDecisionRow,
+  toDecisionCreateInput,
+  toDecisionReplaceUpdateInput,
+} from './decision-record.mapper';
 import { PrismaService } from './prisma.service';
 
 const INCLUDE_CHILDREN = {

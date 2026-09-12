@@ -19,6 +19,7 @@ export default defineConfig({
   },
   engine: 'classic',
   datasource: {
-    url: process.env.DATABASE_URL ?? 'postgresql://triage:triage@localhost:5432/triage?schema=public',
+    url:
+      process.env.DATABASE_URL ?? 'postgresql://triage:triage@localhost:5432/triage?schema=public',
   },
 });

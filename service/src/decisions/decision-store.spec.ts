@@ -40,7 +40,12 @@ function sampleRecord(): DecisionRecord {
       supporting_evidence: null,
       distinct_issues: [],
     },
-    duplicate_verdict: { tier: 'not_a_duplicate', target_issue: null, similarity: null, rationale: '' },
+    duplicate_verdict: {
+      tier: 'not_a_duplicate',
+      target_issue: null,
+      similarity: null,
+      rationale: '',
+    },
     pending_action: null,
     outcome: 'issue_created',
     gitea_issue_number: 42,
@@ -57,7 +62,12 @@ function sampleRecord(): DecisionRecord {
     ],
     token_usage: [
       { call: 'extract', candidate_issue_number: null, input_tokens: 500, output_tokens: 80 },
-      { call: 'duplicate_judgment', candidate_issue_number: 7, input_tokens: 200, output_tokens: 10 },
+      {
+        call: 'duplicate_judgment',
+        candidate_issue_number: 7,
+        input_tokens: 200,
+        output_tokens: 10,
+      },
     ],
     stage_timings_ms: [
       { stage: 'extraction', duration_ms: 850, candidate_issue_number: null },
@@ -110,7 +120,13 @@ describe('DecisionStore', () => {
       ...sampleRecord(),
       status: 'processing',
       outcome: null,
-      pending_action: { type: 'create_issue', title: 'New issue', body: 'body text', labels: ['bug'], target_issue: null },
+      pending_action: {
+        type: 'create_issue',
+        title: 'New issue',
+        body: 'body text',
+        labels: ['bug'],
+        target_issue: null,
+      },
     };
 
     await store.save(record);
@@ -128,9 +144,13 @@ describe('DecisionStore', () => {
     });
 
     expect(row.transientRetriesConsumed).toBe(2);
-    expect(row.duplicateCandidates.map((c) => ({ issue_number: c.issueNumber, similarity: c.similarity, same_bug: c.sameBug }))).toEqual(
-      record.duplicate_candidates_considered,
-    );
+    expect(
+      row.duplicateCandidates.map((c) => ({
+        issue_number: c.issueNumber,
+        similarity: c.similarity,
+        same_bug: c.sameBug,
+      })),
+    ).toEqual(record.duplicate_candidates_considered);
     expect(
       row.tokenUsages.map((t) => ({
         call: t.call,
@@ -140,7 +160,11 @@ describe('DecisionStore', () => {
       })),
     ).toEqual(record.token_usage);
     expect(
-      row.stageTimings.map((s) => ({ stage: s.stage, duration_ms: s.durationMs, candidate_issue_number: s.candidateIssueNumber })),
+      row.stageTimings.map((s) => ({
+        stage: s.stage,
+        duration_ms: s.durationMs,
+        candidate_issue_number: s.candidateIssueNumber,
+      })),
     ).toEqual(record.stage_timings_ms);
   });
 
@@ -160,7 +184,12 @@ describe('DecisionStore', () => {
   });
 
   it('new fields stay nullable/additive -- an update overwrites the row rather than merging', async () => {
-    const pending: DecisionRecord = { ...sampleRecord(), status: 'pending', token_usage: [], stage_timings_ms: [] };
+    const pending: DecisionRecord = {
+      ...sampleRecord(),
+      status: 'pending',
+      token_usage: [],
+      stage_timings_ms: [],
+    };
     await store.save(pending);
 
     const completed = sampleRecord();

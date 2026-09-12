@@ -107,7 +107,9 @@ function headerFields(record: DecisionRecord) {
   };
 }
 
-function duplicateCandidateCreates(record: DecisionRecord): Prisma.DuplicateCandidateCreateWithoutDecisionInput[] {
+function duplicateCandidateCreates(
+  record: DecisionRecord,
+): Prisma.DuplicateCandidateCreateWithoutDecisionInput[] {
   return record.duplicate_candidates_considered.map((c) => ({
     issueNumber: c.issue_number,
     similarity: c.similarity,
@@ -124,7 +126,9 @@ function tokenUsageCreates(record: DecisionRecord): Prisma.TokenUsageCreateWitho
   }));
 }
 
-function stageTimingCreates(record: DecisionRecord): Prisma.StageTimingCreateWithoutDecisionInput[] {
+function stageTimingCreates(
+  record: DecisionRecord,
+): Prisma.StageTimingCreateWithoutDecisionInput[] {
   return record.stage_timings_ms.map((s) => ({
     stage: s.stage,
     durationMs: s.duration_ms,
