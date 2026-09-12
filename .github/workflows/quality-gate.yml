@@ -34,6 +34,10 @@ jobs:
         working-directory: service
       - run: npm run lint
         working-directory: service
+      - run: npm run format:check
+        working-directory: service
+      - run: npm run format:prisma:check
+        working-directory: service
 
   coverage:
     name: coverage
