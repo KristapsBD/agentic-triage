@@ -1,0 +1,25 @@
+# CodeRabbit configuration (issue #56, item 4).
+#
+# This versions what CodeRabbit is actually running on this repo today, as
+# observed on PR #55 (2026-09-12) -- the only PR so far to receive a
+# CodeRabbit review -- rather than assumed defaults:
+#   - "Configuration used: defaults", "Review profile: CHILL", "Plan: Advanced"
+#   - Pre-merge checks all ran in non-blocking mode: Title check came back
+#     inconclusive on that PR and did not block the merge, so none of these
+#     checks are in "error" mode.
+#   - No path-filter exclusions were in effect: both changed files were
+#     reviewed with no "ignored due to path filters" notice.
+#
+# Schema: https://docs.coderabbit.ai/reference/yaml-template
+
+reviews:
+  profile: chill
+  pre_merge_checks:
+    docstrings:
+      mode: warning
+    title:
+      mode: warning
+    description:
+      mode: warning
+    issue_assessment:
+      mode: warning
