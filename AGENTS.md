@@ -28,7 +28,17 @@ tables (each cascade-deleted with its parent), mirroring `service/src/reports/ty
 `DecisionRecord` shape; the initial migration is checked into `service/prisma/migrations/`.
 `service/prisma.config.ts` loads `DATABASE_URL` from the repo-root `.env` rather than a
 service-local one, matching every other env-driven script's convention (see
-`service/src/eval/*.ts`, `service/src/scripts/*.ts`). Issue #59 wired a `PrismaService`
+`service/src/eval/*.ts`, `service/src/scripts/*.ts`), falling back to the same
+`postgresql://triage:triage@localhost:5432/triage?schema=public` default `Settings`
+(`service/src/config/settings.ts`) uses when unset — `prisma generate` needs a
+syntactically valid URL but never a reachable database, and CI/a clean `npm ci`
+has no `.env`. `service/package.json`'s `postinstall` script runs `prisma generate`
+explicitly rather than relying on `@prisma/client`'s own postinstall hook, which is
+unreliable under `npm ci`'s install ordering and silently leaves the generic,
+model-less stub client in place (issue #59's CI investigation: this produced
+TS2305/TS2694 "no exported member" errors for every `Prisma.*` type the mapper
+uses, on a fresh install only — a local dev tree with an already-generated client
+never surfaces it). Issue #59 wired a `PrismaService`
 (`service/src/decisions/prisma.service.ts`) up to `DecisionStore`
 (`service/src/decisions/decision-store.ts`), which is now the real persistence path for
 `TriagePort`; the old SQLite-backed implementation and `better-sqlite3` are gone.
