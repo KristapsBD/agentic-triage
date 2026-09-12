@@ -19,6 +19,20 @@ Single-context layout (`CONTEXT.md` + `docs/adr/` at the repo root). See `docs/a
 
 Running more than one agent against this repo at once — concurrent sessions or spawned subagents — each one works in its own git worktree, never a shared one. See `docs/agents/parallel-work.md`.
 
+### Postgres + Prisma (local persistence infra)
+
+A `postgres` service in the root `docker-compose.yml` provisions local Postgres, port 5432
+published to the host for a direct client connection. `service/prisma/schema.prisma` models
+the `Decision` header table plus `DuplicateCandidate`/`TokenUsage`/`StageTiming` child
+tables (each cascade-deleted with its parent), mirroring `service/src/reports/types.ts`'s
+`DecisionRecord` shape; the initial migration is checked into `service/prisma/migrations/`.
+`service/prisma.config.ts` loads `DATABASE_URL` from the repo-root `.env` rather than a
+service-local one, matching every other env-driven script's convention (see
+`service/src/eval/*.ts`, `service/src/scripts/*.ts`). This is infrastructure only (issue
+#58): nothing in the application reads from this database yet. The still-live SQLite
+`DecisionStore` (`service/src/decisions/decision-store.ts`) remains the real persistence
+path until issue #59 wires a `PrismaService` up to the existing `TriagePort` interface.
+
 ### Quality gate (complexity + coverage + mutation)
 
 `service`'s `npm run preflight` enforces ESLint `complexity` (ceiling 4), Jest

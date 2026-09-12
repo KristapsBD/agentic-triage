@@ -20,6 +20,7 @@ const BASE_SETTINGS: Omit<Settings, 'decision_db_path'> = {
   gitea_token: 'x',
   anthropic_api_key: 'test-key',
   anthropic_model: 'claude-sonnet-5',
+  database_url: 'postgresql://triage:triage@localhost:5432/triage?schema=public',
   embedding_model_name: 'Xenova/all-MiniLM-L6-v2',
   duplicate_similarity_floor: 0.35,
   duplicate_top_k: 3,
