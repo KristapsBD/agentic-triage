@@ -16,3 +16,12 @@ Structured JSON logs correlated by `report_hash` still exist and are useful — 
 live during a demo is a real use case `promtail`/Loki serves well — but they're a *transient
 view* onto the same events the Decision Record durably owns, not a second source of truth.
 If the two ever disagreed, the Decision Record wins.
+
+**Addendum (2026-09-12, issue #60):** the SQL-queryability claim above was not fully true
+until now — the duplicate-candidate, token-usage, and stage-timing histories lived only inside
+the SQLite `DecisionRecord` row's JSON blob, reachable only by parsing that blob, not by SQL
+against normalized columns. [PR #67](https://github.com/KristapsBD/agentic-triage/pull/67)
+(issue #59) migrated the store to Postgres/Prisma and split those histories into real
+`DuplicateCandidate`/`TokenUsage`/`StageTiming` child tables (`service/prisma/schema.prisma`),
+each cascade-deleted with its parent `Decision` row. The Decision Record now actually is
+queryable directly via SQL for its full evidence trail, fulfilling this ADR's original intent.
